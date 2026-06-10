@@ -633,7 +633,13 @@ build_gui_wsl() {
         warn "GUI 빌드 건너뜀 (WebKitGTK 미설치)"
         return 0
     fi
+
     mkdir -p "${OUT_DIR}"
+
+    if [[ ! -f "${WSL_HOME}/gui/src-tauri/icons/32x32.png" ]] && command -v python3 &>/dev/null; then
+        log "Tauri 아이콘 생성 중..."
+        python3 "${WSL_HOME}/build/gen-tauri-icons.py" >> "${OUT_DIR}/gui-build.log" 2>&1 || true
+    fi
     : > "${OUT_DIR}/gui-build.log"
 
     # WSL에서 Tauri는 Xvfb 없이 빌드 가능 (DISPLAY 불필요)
