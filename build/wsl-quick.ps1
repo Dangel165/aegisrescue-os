@@ -63,9 +63,20 @@ Write-Host "  Args   : $argStr" -ForegroundColor DarkGray
 Write-Host "  Output : $isoPath" -ForegroundColor DarkGray
 Write-Host ""
 
+# Ensure bash exists in the selected distro. Some minimal/broken WSL images
+# only have /bin/sh, but the ISO build script intentionally requires bash.
+Write-Host "  Checking bash inside WSL..." -ForegroundColor DarkGray
+wsl -d $distro -u root -- /bin/sh -c "command -v bash >/dev/null 2>&1 || (apt-get update && apt-get install -y bash coreutils)" 
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  [FAIL] Could not install bash in WSL distro: $distro" -ForegroundColor Red
+    Write-Host "  Try manually:" -ForegroundColor Yellow
+    Write-Host "    wsl -d $distro -u root -- /bin/sh -c `"apt-get update && apt-get install -y bash coreutils`"" -ForegroundColor Yellow
+    exit 1
+}
+
 # Run
 $startTime = Get-Date
-wsl -d $distro -u root -- bash $BuildScript $argParts
+wsl -d $distro -u root -- /bin/bash $BuildScript $argParts
 $elapsed = [Math]::Round(((Get-Date) - $startTime).TotalMinutes, 1)
 
 # Check output

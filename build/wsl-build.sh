@@ -77,7 +77,17 @@ detect_wsl() {
     if ! grep -qi "microsoft\|wsl" /proc/version 2>/dev/null; then
         err "WSL 환경이 아닙니다. 이 스크립트는 WSL2에서 실행해야 합니다."
     fi
-    if grep -qi "WSL1\|Microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
+
+    # WSL2 usually exposes WSL_INTEROP. Older detection based on "Microsoft"
+    # in osrelease incorrectly warns on normal WSL2 kernels.
+    local has_wsl2_interop=0
+    if [[ -n "${WSL_INTEROP:-}" ]]; then
+        has_wsl2_interop=1
+    elif compgen -G "/run/WSL/*_interop" >/dev/null 2>&1; then
+        has_wsl2_interop=1
+    fi
+
+    if [[ "${has_wsl2_interop}" -eq 0 ]]; then
         warn "WSL1 감지 — WSL2 업그레이드를 권장합니다"
         warn "PowerShell: wsl --set-version Ubuntu 2"
     fi
@@ -274,29 +284,26 @@ build_base_wsl() {
     log "Ubuntu 24.04 minimal 설치 중..."
     log "(약 5-10분 소요, 인터넷 연결 필요)"
 
-    debootstrap \
+    local debootstrap_log="${OUT_DIR}/debootstrap.log"
+    mkdir -p "${OUT_DIR}"
+
+    if ! debootstrap \
         --arch=amd64 \
         --variant=minbase \
+        --components=main,restricted,universe,multiverse \
         --include=systemd,systemd-sysv,udev,dbus,\
 apt-utils,locales,console-setup,\
 sudo,passwd,adduser,util-linux,procps,coreutils,\
 findutils,grep,sed,gawk,curl,wget,ca-certificates,\
-gnupg,lsb-release,pciutils,usbutils,\
-ntfs-3g,exfat-fuse,hfsplus,hfsutils,btrfs-progs,\
-xfsprogs,dosfstools,parted,gdisk,fdisk,\
-clamav,yara,\
-photorec,ddrescue,dc3dd,\
-grub2-common,grub-pc-bin,grub-efi-amd64-bin,\
-grub-efi-amd64-signed,shim-signed,\
-nftables,iptables,\
-bubblewrap,strace,\
-python3-minimal,\
-xz-utils,zstd,lz4,\
-live-boot,live-config,plymouth,plymouth-themes \
+gnupg,lsb-release,python3-minimal,xz-utils,zstd,lz4 \
         noble \
         "${CHROOT_DIR}" \
         http://archive.ubuntu.com/ubuntu/ \
-        2>&1 | grep -E "^(I:|W:|E:)" | head -40 || true
+        >"${debootstrap_log}" 2>&1; then
+        warn "debootstrap 실패. 마지막 로그:"
+        tail -40 "${debootstrap_log}" || true
+        err "베이스 시스템 생성 실패: ${debootstrap_log}"
+    fi
 
     ok "debootstrap 완료"
 
@@ -304,6 +311,7 @@ live-boot,live-config,plymouth,plymouth-themes \
     wsl_mount_chroot "${CHROOT_DIR}"
 
     # sources.list
+    mkdir -p "${CHROOT_DIR}/etc/apt"
     cat > "${CHROOT_DIR}/etc/apt/sources.list" <<'EOF'
 deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
 deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
@@ -312,6 +320,17 @@ EOF
 
     # 호스트명 / 로케일
     echo "aegisrescue" > "${CHROOT_DIR}/etc/hostname"
+    chroot "${CHROOT_DIR}" apt-get update -qq 2>/dev/null || true
+    chroot "${CHROOT_DIR}" apt-get install -y --no-install-recommends \
+        pciutils usbutils ntfs-3g exfat-fuse hfsplus hfsutils btrfs-progs \
+        xfsprogs dosfstools parted gdisk fdisk \
+        clamav yara testdisk gddrescue dc3dd \
+        grub2-common grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed shim-signed \
+        nftables iptables bubblewrap strace \
+        live-boot live-config plymouth plymouth-themes \
+        2>&1 | tee "${OUT_DIR}/chroot-packages.log" | tail -20 || \
+        warn "일부 선택 패키지 설치 실패. 계속 진행합니다: ${OUT_DIR}/chroot-packages.log"
+
     chroot "${CHROOT_DIR}" locale-gen ko_KR.UTF-8 en_US.UTF-8 ja_JP.UTF-8 2>/dev/null || true
     chroot "${CHROOT_DIR}" update-locale LANG=en_US.UTF-8 2>/dev/null || true
 
