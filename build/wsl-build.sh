@@ -399,20 +399,31 @@ build_rust_wsl() {
     mkdir -p "${TOOLS_DIR}"
 
     # musl 빌드 시도, 실패 시 glibc 폴백
-    if RUSTFLAGS="-C target-feature=+crt-static" \
-       cargo build --release \
-           --jobs "${JOBS}" \
-           --target "${rust_target}" \
-           2>&1 | tee "${OUT_DIR}/rust-build.log" | \
-           grep -E "^(Compiling|Finished|error\[)" | tail -5; then
-        local release_dir="${WSL_HOME}/target/${rust_target}/release"
+    # NOTE: grep/tail in a pipeline must not decide success — pipefail + set -e
+    # would exit the whole build when grep finds no matches.
+    local release_dir cargo_status=1
+    : > "${OUT_DIR}/rust-build.log"
+
+    RUSTFLAGS="-C target-feature=+crt-static" \
+        cargo build --release \
+            --jobs "${JOBS}" \
+            --target "${rust_target}" \
+            2>&1 | tee "${OUT_DIR}/rust-build.log" | tail -20
+    cargo_status=${PIPESTATUS[0]}
+
+    if [[ "${cargo_status}" -eq 0 ]]; then
+        release_dir="${WSL_HOME}/target/${rust_target}/release"
     else
         warn "musl 빌드 실패 — glibc 타겟으로 재시도"
         rust_target="${ARCH}-unknown-linux-gnu"
         cargo build --release --jobs "${JOBS}" \
-            2>&1 | tee -a "${OUT_DIR}/rust-build.log" | \
-            grep -E "^(Compiling|Finished|error\[)" | tail -5
-        local release_dir="${WSL_HOME}/target/release"
+            2>&1 | tee -a "${OUT_DIR}/rust-build.log" | tail -20
+        cargo_status=${PIPESTATUS[0]}
+        release_dir="${WSL_HOME}/target/release"
+    fi
+
+    if [[ "${cargo_status}" -ne 0 ]]; then
+        err "Rust 빌드 실패. 로그 확인: ${OUT_DIR}/rust-build.log"
     fi
 
     # 바이너리 복사
