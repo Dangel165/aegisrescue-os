@@ -5,8 +5,9 @@ edition = "2021"
 description = "AegisRescue installer wizard — language, license, component selection, disk install"
 license = "GPL-3.0"
 
-[lib]
-crate-type = ["staticlib", "cdylib"]
+[[bin]]
+name = "aegis-installer"
+path = "src/main.rs"
 
 [dependencies]
 aegis-common = { path = "../../core/aegis-common" }

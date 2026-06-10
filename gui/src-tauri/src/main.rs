@@ -28,8 +28,7 @@ fn main() {
             commands::run_sandbox,
         ])
         .setup(|app| {
-            // 스플래시 화면
-            let window = app.get_window("main").unwrap();
+            let _window = app.get_window("main").unwrap();
             Ok(())
         })
         .run(tauri::generate_context!())
