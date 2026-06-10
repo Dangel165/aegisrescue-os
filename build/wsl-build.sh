@@ -165,9 +165,8 @@ EOF
         git build-essential pkg-config libssl-dev \
         # musl 정적 바이너리
         musl-tools musl-dev \
-        # Tauri 의존성 (GUI 빌드용)
-        libwebkit2gtk-4.0-dev libgtk-3-dev \
-        libayatana-appindicator3-dev librsvg2-dev \
+        # Tauri 공통 (WebKitGTK는 ensure_tauri_deps에서 Ubuntu 버전별 처리)
+        libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
         # QEMU 테스트
         qemu-system-x86 ovmf \
         # 기타
@@ -175,6 +174,7 @@ EOF
         2>/dev/null | grep -E "^(Setting up|Get:|Unpacking)" | head -30 || true
 
     ok "패키지 설치 완료"
+    ensure_tauri_deps || warn "WebKitGTK 설치 실패 — GUI 빌드는 나중에 다시 시도하세요"
 
     # Rust 설치
     if ! command -v cargo &>/dev/null; then
@@ -463,19 +463,87 @@ ensure_cargo() {
     command -v cargo >/dev/null 2>&1
 }
 
+tauri_webkit4_ready() {
+    pkg-config --exists javascriptcoregtk-4.0 2>/dev/null && \
+        pkg-config --exists webkit2gtk-4.0 2>/dev/null
+}
+
+tauri_link_webkit41_as_40() {
+    local pc_dir
+    for pc_dir in /usr/lib/x86_64-linux-gnu/pkgconfig /usr/lib/pkgconfig; do
+        [[ -d "${pc_dir}" ]] || continue
+        for pair in \
+            "javascriptcoregtk-4.1.pc:javascriptcoregtk-4.0.pc" \
+            "webkit2gtk-4.1.pc:webkit2gtk-4.0.pc" \
+            "webkit2gtk-web-extension-4.1.pc:webkit2gtk-web-extension-4.0.pc"; do
+            local src="${pair%%:*}" dst="${pair##*:}"
+            [[ -f "${pc_dir}/${src}" ]] || continue
+            [[ -e "${pc_dir}/${dst}" ]] && continue
+            ln -sf "${src}" "${pc_dir}/${dst}"
+        done
+    done
+}
+
 ensure_tauri_deps() {
+    apt-get update -qq 2>/dev/null || true
     apt-get install -y --no-install-recommends \
         libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
-        libssl-dev patchelf \
-        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3 || true
+        libssl-dev patchelf pkg-config libsoup2.4-dev \
+        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -5 || true
 
-    if apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
-        2>/dev/null | grep -q .; then
-        :
-    else
-        apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev \
-            2>/dev/null || true
+    if tauri_webkit4_ready; then
+        ok "WebKitGTK 4.0 (Tauri v1) 준비됨"
+        return 0
     fi
+
+    log "WebKitGTK 4.0 설치 중 (Tauri v1 필수)..."
+
+    # Ubuntu 22.04 / Debian 12: 네이티브 4.0 패키지
+    if apt-cache show libwebkit2gtk-4.0-dev &>/dev/null; then
+        if apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev \
+            2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3; then
+            tauri_webkit4_ready && { ok "libwebkit2gtk-4.0-dev 설치됨"; return 0; }
+        fi
+    fi
+
+    # Ubuntu 24.04+: 4.1만 제공 → pkg-config 4.0 별칭 (Tauri v1 공식 우회)
+    if apt-get install -y --no-install-recommends \
+        libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3; then
+        tauri_link_webkit41_as_40
+        if tauri_webkit4_ready; then
+            ok "WebKitGTK 4.1 + 4.0 pkg-config 별칭 (Ubuntu 24+)"
+            return 0
+        fi
+    fi
+
+    # 최후 수단: Jammy 저장소에서 4.0 설치 (핀 고정으로 시스템 패키지 보호)
+    log "Jammy 저장소에서 libwebkit2gtk-4.0-dev 설치 시도..."
+    local jammy_list="/etc/apt/sources.list.d/aegis-webkit-jammy.list"
+    local jammy_pin="/etc/apt/preferences.d/aegis-webkit-jammy"
+    echo "deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main universe" > "${jammy_list}"
+    cat > "${jammy_pin}" <<'EOF'
+Package: libwebkit2gtk-4.0-dev libjavascriptcoregtk-4.0-dev
+Pin: release n=jammy
+Pin-Priority: 700
+
+Package: *
+Pin: release n=jammy
+Pin-Priority: 100
+EOF
+    apt-get update -qq 2>/dev/null || true
+    if apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev \
+        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3; then
+        rm -f "${jammy_list}" "${jammy_pin}"
+        apt-get update -qq 2>/dev/null || true
+        tauri_webkit4_ready && { ok "Jammy WebKitGTK 4.0 설치됨"; return 0; }
+    fi
+    rm -f "${jammy_list}" "${jammy_pin}"
+    apt-get update -qq 2>/dev/null || true
+
+    warn "javascriptcoregtk-4.0 / webkit2gtk-4.0 를 찾을 수 없습니다"
+    warn "수동 설치: sudo bash build/wsl-build.sh --setup"
+    return 1
 }
 
 ensure_nodejs() {
@@ -520,7 +588,10 @@ build_gui_wsl() {
         return 0
     fi
 
-    ensure_tauri_deps
+    if ! ensure_tauri_deps; then
+        warn "GUI 빌드 건너뜀 (WebKitGTK 미설치)"
+        return 0
+    fi
     mkdir -p "${OUT_DIR}"
     : > "${OUT_DIR}/gui-build.log"
 
