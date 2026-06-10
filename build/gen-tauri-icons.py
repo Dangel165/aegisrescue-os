@@ -7,20 +7,21 @@ import struct
 import zlib
 from pathlib import Path
 
-# AegisCenter accent blue (#1f6feb)
-RGB = (0x1F, 0x6F, 0xEB)
+# AegisCenter accent blue (#1f6feb), opaque
+RGBA = (0x1F, 0x6F, 0xEB, 0xFF)
 
 
 def write_png(path: Path, size: int) -> None:
-    r, g, b = RGB
-    row = b"\x00" + bytes([r, g, b] * size)
+    r, g, b, a = RGBA
+    row = b"\x00" + bytes([r, g, b, a] * size)
     raw = row * size
 
     def chunk(tag: bytes, data: bytes) -> bytes:
         crc = zlib.crc32(tag + data) & 0xFFFFFFFF
         return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
 
-    ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
+    # Tauri requires RGBA (color type 6), not RGB.
+    ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
     png = (
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", ihdr)
