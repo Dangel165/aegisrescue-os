@@ -4,6 +4,77 @@
 
 Windows에서 WSL2(Windows Subsystem for Linux 2)를 사용하여 AegisRescue ISO를 빌드합니다.
 
+> **요약:** [README.md — Windows(WSL2)에서 ISO 빌드](../README.md#windowswsl2에서-iso-빌드--매번-할-일)
+
+---
+
+## 매번 할 일 (체크리스트)
+
+Windows에서 개발한 뒤 ISO를 만들 때 **이 순서를 따릅니다.**
+
+| 단계 | 명령 | 언제 |
+|------|------|------|
+| 1. 동기화 | `sudo bash /mnt/f/ofntkd/aegisrescue/build/wsl-build.sh --copy` | `git pull`, 소스 수정 후 **항상** |
+| 2. 빌드 | 아래 [자주 쓰는 조합](#자주-쓰는-조합) 참고 | 목적에 맞게 |
+| 3. 확인 | `build/tools`, `chroot/opt/aegis/bin`, `build/out/*.iso` | 빌드 후 |
+
+**중요 규칙**
+
+- 빌드 실행 경로: **`/root/aegisrescue`** (`sudo bash /root/aegisrescue/build/wsl-build.sh`)
+- `--copy`만 실행하면 복사 후 **종료**됩니다. ISO까지 하려면 2단계를 **별도로** 실행합니다.
+- `/root/...` 아래 파일 확인·복사는 **`sudo`** 필요 (`Permission denied` 방지).
+- `sudo cp /root/aegisrescue/build/tools/* ...` 는 **실패할 수 있음** (셸 glob). 대신:
+  ```bash
+  sudo bash -c 'cp -a /root/aegisrescue/build/tools/. /root/aegisrescue/build/chroot/opt/aegis/bin/'
+  ```
+
+### Ubuntu 24.04 + Tauri GUI (WebKit)
+
+22.04는 `libwebkit2gtk-4.0-dev`로 충분합니다. **24.04**는 4.1만 제공되므로 Tauri v1 빌드 전에 한 번 설정합니다.
+
+```bash
+sudo apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev
+sudo ln -sf libwebkit2gtk-4.1.so.0        /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.0.so.0
+sudo ln -sf libwebkit2gtk-4.1.so          /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.0.so
+sudo ln -sf libjavascriptcoregtk-4.1.so.0 /usr/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.0.so.0
+sudo ln -sf libjavascriptcoregtk-4.1.so   /usr/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.0.so
+pkg-config --exists webkit2gtk-4.0 && echo OK
+```
+
+`wsl-build.sh`의 `ensure_tauri_deps`가 위 작업을 자동으로 시도합니다.
+
+### Tauri GUI 바이너리 위치
+
+`npx tauri build` 성공 후에도 `src-tauri/target/release/aegiscenter` 가 **없을 수 있습니다.**  
+번들(`.deb`) 안에만 있는 경우가 많습니다.
+
+| 앱 | deb 경로 (예) | `usr/bin` 실행 파일 | `build/tools` 이름 |
+|----|---------------|---------------------|-------------------|
+| AegisCenter | `gui/.../bundle/deb/aegis-center_0.1.0_amd64.deb` | `aegis-center` | `aegiscenter` |
+| Installer | `installer/.../bundle/deb/aegis-rescue-installer_0.1.0_amd64.deb` | `aegis-rescue-installer` | `aegis-installer` |
+
+수동 추출:
+
+```bash
+sudo mkdir -p /root/aegisrescue/build/tools
+
+sudo dpkg-deb -x /root/aegisrescue/gui/src-tauri/target/release/bundle/deb/aegis-center_0.1.0_amd64.deb /tmp/aegis-gui
+sudo cp /tmp/aegis-gui/usr/bin/aegis-center /root/aegisrescue/build/tools/aegiscenter
+
+sudo dpkg-deb -x /root/aegisrescue/installer/src-tauri/target/release/bundle/deb/aegis-rescue-installer_0.1.0_amd64.deb /tmp/aegis-inst
+sudo cp /tmp/aegis-inst/usr/bin/aegis-rescue-installer /root/aegisrescue/build/tools/aegis-installer
+```
+
+최신 `wsl-build.sh`는 빌드 후 **deb에서 자동 추출**해 `build/tools`에 넣습니다.
+
+### RGBA 아이콘 (Tauri 컴파일 오류 시)
+
+```bash
+sudo python3 /root/aegisrescue/build/gen-tauri-icons.py --root /root/aegisrescue
+# PNG color type 확인: 6 = RGBA
+sudo python3 -c "print(open('/root/aegisrescue/gui/src-tauri/icons/32x32.png','rb').read()[25])"
+```
+
 ---
 
 ## 사전 조건
@@ -182,20 +253,41 @@ sudo bash ~/aegisrescue/build/wsl-build.sh [옵션]
 ### 자주 쓰는 조합
 
 ```bash
-# 초기 전체 빌드
-sudo bash build/wsl-build.sh
+# 0) Windows 소스 → WSL 동기화 (코드 변경 후 항상)
+sudo DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+  bash /mnt/f/ofntkd/aegisrescue/build/wsl-build.sh --copy
 
-# Rust 코드만 바꿨을 때 (debootstrap 재사용)
-sudo bash build/wsl-build.sh --skip-base --skip-gui
+# 1) 초기 전체 빌드 (debootstrap + Rust + GUI + ISO)
+sudo DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+  bash /root/aegisrescue/build/wsl-build.sh
 
-# ISO 레이아웃만 바꿨을 때 (가장 빠름, 2-3분)
-sudo bash build/wsl-build.sh --iso-only
+# 2) Rust만 변경 (chroot·GUI 유지)
+sudo bash /root/aegisrescue/build/wsl-build.sh --skip-base --skip-gui
+
+# 3) GUI만 변경 (Rust·chroot base 유지)
+sudo bash /root/aegisrescue/build/wsl-build.sh --skip-base --skip-rust
+
+# 4) build/tools 준비됨 → chroot 반영 + ISO만 (GUI/Rust 빌드 생략)
+sudo bash /root/aegisrescue/build/wsl-build.sh --skip-base --skip-rust --skip-gui
+
+# 5) squashfs + ISO만 (가장 빠름, 2-3분)
+sudo bash /root/aegisrescue/build/wsl-build.sh --iso-only
 
 # ARM64 빌드
-sudo bash build/wsl-build.sh --arch aarch64
+sudo bash /root/aegisrescue/build/wsl-build.sh --arch aarch64
 
 # QEMU로 바로 테스트
-sudo bash build/wsl-build.sh --iso-only --qemu-test
+sudo bash /root/aegisrescue/build/wsl-build.sh --iso-only --qemu-test
+```
+
+### 빌드 성공 확인
+
+```bash
+sudo ls -lh /root/aegisrescue/build/tools/
+sudo ls -lh /root/aegisrescue/build/chroot/opt/aegis/bin/aegiscenter \
+             /root/aegisrescue/build/chroot/opt/aegis/bin/aegis-installer
+sudo ls -lh /root/aegisrescue/build/out/aegisrescue-*.iso
+sudo tail -40 /root/aegisrescue/build/out/gui-build.log    # GUI 실패 시
 ```
 
 ---
@@ -300,4 +392,19 @@ memory=8GB
 
 ### `/mnt/f/` 권한 오류
 Windows 파일시스템은 Linux 권한 모델이 제한됩니다.
-빌드 스크립트가 자동으로 `~/aegisrescue/`로 복사합니다.
+빌드 스크립트가 자동으로 `/root/aegisrescue/`로 복사합니다.
+
+### GUI: `icon is not RGBA` / `custom-protocol` / 링크 `-lwebkit2gtk-4.0`
+- RGBA: `sudo python3 /root/aegisrescue/build/gen-tauri-icons.py --root /root/aegisrescue`
+- `custom-protocol`: `gui/installer/src-tauri/Cargo.toml`의 `[features] custom-protocol` 확인 후 `--copy`
+- 링크 오류: 위 [Ubuntu 24.04 + Tauri GUI](#ubuntu-2404--tauri-gui-webkit) 절 WebKit 심볼릭 링크
+
+### GUI 빌드 성공인데 `build/tools`에 없음
+Tauri가 `.deb`만 남긴 경우입니다. [Tauri GUI 바이너리 위치](#tauri-gui-바이너리-위치) 절 참고.
+`wsl-build.sh` 최신 버전은 deb에서 자동 추출합니다.
+
+### `sudo cp .../tools/*` → `cannot stat .../*`
+일반 사용자 셸이 `/root` 아래 glob을 못 읽어서 발생합니다.
+```bash
+sudo bash -c 'cp -a /root/aegisrescue/build/tools/. /root/aegisrescue/build/chroot/opt/aegis/bin/'
+```

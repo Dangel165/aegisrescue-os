@@ -79,6 +79,87 @@ sudo dd if=build/out/aegisrescue-x86_64.iso of=/dev/sdX \
 
 ---
 
+## Windows(WSL2)에서 ISO 빌드 — 매번 할 일
+
+**상세 가이드:** [docs/WSL-BUILD.md](docs/WSL-BUILD.md)
+
+빌드는 Windows 경로(`F:\...`)가 아니라 **`/root/aegisrescue`** 에서 실행합니다.  
+소스를 수정·`git pull` 한 뒤에는 반드시 `--copy`로 WSL 홈에 동기화하세요.
+
+### 1) 소스 동기화 (코드 변경 후 필수)
+
+```bash
+sudo DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+  bash /mnt/f/ofntkd/aegisrescue/build/wsl-build.sh --copy
+```
+
+### 2) 전체 빌드 (처음 또는 chroot 초기화 후)
+
+```bash
+sudo DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+  bash /root/aegisrescue/build/wsl-build.sh
+```
+
+### 3) 재빌드 (자주 쓰는 조합)
+
+```bash
+# Rust만 변경
+sudo bash /root/aegisrescue/build/wsl-build.sh --skip-base --skip-gui
+
+# GUI만 변경 (Tauri)
+sudo bash /root/aegisrescue/build/wsl-build.sh --skip-base --skip-rust
+
+# tools/chroot 준비됐을 때 ISO만
+sudo bash /root/aegisrescue/build/wsl-build.sh --skip-base --skip-rust --skip-gui
+```
+
+### 4) Ubuntu 24.04 — Tauri GUI (최초 1회)
+
+WebKitGTK 4.0이 없어 링크 오류가 나면:
+
+```bash
+sudo apt-get install -y libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev
+sudo ln -sf libwebkit2gtk-4.1.so.0        /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.0.so.0
+sudo ln -sf libwebkit2gtk-4.1.so          /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.0.so
+sudo ln -sf libjavascriptcoregtk-4.1.so.0 /usr/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.0.so.0
+sudo ln -sf libjavascriptcoregtk-4.1.so   /usr/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.0.so
+```
+
+(`wsl-build.sh`가 자동 설치·별칭을 시도합니다.)
+
+### 5) GUI 바이너리 — `build/tools`에 없을 때
+
+Tauri v1은 실행 파일을 `target/release/`가 아니라 **`.deb` 번들**에 넣는 경우가 많습니다.
+
+```bash
+sudo dpkg-deb -x /root/aegisrescue/gui/src-tauri/target/release/bundle/deb/aegis-center_0.1.0_amd64.deb /tmp/aegis-gui
+sudo cp /tmp/aegis-gui/usr/bin/aegis-center /root/aegisrescue/build/tools/aegiscenter
+
+sudo dpkg-deb -x /root/aegisrescue/installer/src-tauri/target/release/bundle/deb/aegis-rescue-installer_0.1.0_amd64.deb /tmp/aegis-inst
+sudo cp /tmp/aegis-inst/usr/bin/aegis-rescue-installer /root/aegisrescue/build/tools/aegis-installer
+```
+
+또는: `sudo python3 /root/aegisrescue/build/gen-tauri-icons.py --root /root/aegisrescue` (아이콘) 후 GUI 빌드 재실행.
+
+### 6) chroot 수동 복사 (주의: glob)
+
+`sudo cp /root/.../tools/*` 는 **일반 사용자 셸이 glob을 펼치기 때문에** 실패할 수 있습니다.
+
+```bash
+sudo bash -c 'cp -a /root/aegisrescue/build/tools/. /root/aegisrescue/build/chroot/opt/aegis/bin/'
+```
+
+### 7) 성공 확인
+
+```bash
+sudo ls -lh /root/aegisrescue/build/tools/aegiscenter /root/aegisrescue/build/tools/aegis-installer
+sudo ls -lh /root/aegisrescue/build/chroot/opt/aegis/bin/aegiscenter
+sudo ls -lh /root/aegisrescue/build/out/*.iso
+sudo tail -30 /root/aegisrescue/build/out/gui-build.log   # GUI 문제 시
+```
+
+---
+
 ## 프로젝트 구조
 
 ```
