@@ -63,7 +63,17 @@ def write_ico(path: Path, sizes: list[int]) -> None:
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parent.parent
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate Tauri RGBA icons")
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help="Project root (default: parent of build/). Use /root/aegisrescue on WSL.",
+    )
+    args = parser.parse_args()
+    root = args.root.resolve() if args.root else Path(__file__).resolve().parent.parent
     targets = [
         root / "gui" / "src-tauri" / "icons",
         root / "installer" / "src-tauri" / "icons",

@@ -516,7 +516,7 @@ ensure_tauri_icons() {
     local gen_script="${WSL_HOME}/build/gen-tauri-icons.py"
     if command -v python3 &>/dev/null && [[ -f "${gen_script}" ]]; then
         log "Tauri RGBA 아이콘 생성 중..."
-        python3 "${gen_script}" || return 1
+        python3 "${gen_script}" --root "${WSL_HOME}" || return 1
         return 0
     fi
 
