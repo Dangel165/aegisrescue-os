@@ -444,6 +444,40 @@ build_rust_wsl() {
     ok "Rust 빌드 완료"
 }
 
+ensure_cargo() {
+    source "${HOME}/.cargo/env" 2>/dev/null || \
+    export PATH="${HOME}/.cargo/bin:${PATH}"
+
+    if command -v cargo >/dev/null 2>&1; then
+        return 0
+    fi
+
+    log "Rust/Cargo 없음 — GUI 빌드용 설치 중..."
+    apt-get update -qq 2>/dev/null || true
+    apt-get install -y --no-install-recommends \
+        curl ca-certificates build-essential pkg-config libssl-dev \
+        2>/dev/null || true
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+        sh -s -- -y --default-toolchain stable --no-modify-path
+    source "${HOME}/.cargo/env"
+    command -v cargo >/dev/null 2>&1
+}
+
+ensure_tauri_deps() {
+    apt-get install -y --no-install-recommends \
+        libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+        libssl-dev patchelf \
+        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3 || true
+
+    if apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+        2>/dev/null | grep -q .; then
+        :
+    else
+        apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev \
+            2>/dev/null || true
+    fi
+}
+
 ensure_nodejs() {
     if command -v npm &>/dev/null && command -v node &>/dev/null; then
         ok "Node.js $(node --version) / npm $(npm --version) 사용"
@@ -475,8 +509,10 @@ build_gui_wsl() {
     step "GUI 빌드 (AegisCenter + Installer)"
     [[ $SKIP_GUI -eq 1 ]] && { ok "건너뜀"; return 0; }
 
-    source "${HOME}/.cargo/env" 2>/dev/null || \
-    export PATH="${HOME}/.cargo/bin:${PATH}"
+    if ! ensure_cargo; then
+        warn "Cargo 없음 — GUI 빌드 건너뜀"
+        return 0
+    fi
 
     if ! ensure_nodejs; then
         warn "GUI 빌드 건너뜀 (CLI 도구만 ISO에 포함)"
@@ -484,11 +520,9 @@ build_gui_wsl() {
         return 0
     fi
 
-    # Tauri 빌드 의존성 (없으면 설치 시도)
-    apt-get install -y --no-install-recommends \
-        libwebkit2gtk-4.0-dev libgtk-3-dev \
-        libayatana-appindicator3-dev librsvg2-dev \
-        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3 || true
+    ensure_tauri_deps
+    mkdir -p "${OUT_DIR}"
+    : > "${OUT_DIR}/gui-build.log"
 
     # WSL에서 Tauri는 Xvfb 없이 빌드 가능 (DISPLAY 불필요)
     for project in gui installer; do
@@ -499,10 +533,12 @@ build_gui_wsl() {
             continue
         fi
 
-        DISPLAY="" cargo tauri build 2>&1 | tail -20
-        local tauri_status=${PIPESTATUS[0]}
-        if [[ "${tauri_status}" -ne 0 ]]; then
+        # 프로젝트 로컬 @tauri-apps/cli 사용 (cargo tauri 전역 설치 불필요)
+        if DISPLAY="" npx tauri build >> "${OUT_DIR}/gui-build.log" 2>&1; then
+            :
+        else
             warn "${project} 빌드 실패 (건너뜀)"
+            tail -15 "${OUT_DIR}/gui-build.log" || true
             continue
         fi
 

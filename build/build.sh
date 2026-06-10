@@ -279,7 +279,7 @@ build_gui() {
     log "AegisCenter 빌드 중..."
     cd "${PROJECT_ROOT}/gui"
     npm install --prefer-offline 2>/dev/null || npm install
-    cargo tauri build 2>&1 | tee "${OUT_DIR}/gui-build.log" || warn "GUI 빌드 실패 (건너뜀)"
+    npx tauri build 2>&1 | tee "${OUT_DIR}/gui-build.log" || warn "GUI 빌드 실패 (건너뜀)"
     if [[ -f "src-tauri/target/release/aegiscenter" ]]; then
         cp "src-tauri/target/release/aegiscenter" "${PROJECT_ROOT}/build/tools/"
         ok "AegisCenter 빌드 완료"
@@ -289,7 +289,7 @@ build_gui() {
     log "Installer 빌드 중..."
     cd "${PROJECT_ROOT}/installer"
     npm install --prefer-offline 2>/dev/null || npm install
-    cargo tauri build 2>&1 | tee -a "${OUT_DIR}/gui-build.log" || warn "Installer 빌드 실패 (건너뜀)"
+    npx tauri build 2>&1 | tee -a "${OUT_DIR}/gui-build.log" || warn "Installer 빌드 실패 (건너뜀)"
     if [[ -f "src-tauri/target/release/aegis-installer" ]]; then
         cp "src-tauri/target/release/aegis-installer" "${PROJECT_ROOT}/build/tools/"
         ok "Installer 빌드 완료"
