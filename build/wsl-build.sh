@@ -489,10 +489,38 @@ tauri_export_pkg_config() {
     export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
 }
 
-tauri_webkit4_ready() {
+tauri_webkit4_pkg_ready() {
     tauri_export_pkg_config
     pkg-config --exists javascriptcoregtk-4.0 2>/dev/null && \
         pkg-config --exists webkit2gtk-4.0 2>/dev/null
+}
+
+tauri_webkit4_link_ready() {
+    local lib_dir="/usr/lib/x86_64-linux-gnu"
+    [[ -e "${lib_dir}/libwebkit2gtk-4.0.so" || -e "${lib_dir}/libwebkit2gtk-4.0.so.0" ]] && \
+        [[ -e "${lib_dir}/libjavascriptcoregtk-4.0.so" || -e "${lib_dir}/libjavascriptcoregtk-4.0.so.0" ]]
+}
+
+tauri_webkit4_ready() {
+    tauri_webkit4_pkg_ready && tauri_webkit4_link_ready
+}
+
+tauri_link_webkit41_libs_as_40() {
+    local lib_dir="/usr/lib/x86_64-linux-gnu"
+    [[ -d "${lib_dir}" ]] || return 1
+
+    local pair src dst
+    for pair in \
+        "libwebkit2gtk-4.1.so:libwebkit2gtk-4.0.so" \
+        "libwebkit2gtk-4.1.so.0:libwebkit2gtk-4.0.so.0" \
+        "libjavascriptcoregtk-4.1.so:libjavascriptcoregtk-4.0.so" \
+        "libjavascriptcoregtk-4.1.so.0:libjavascriptcoregtk-4.0.so.0"; do
+        src="${lib_dir}/${pair%%:*}"
+        dst="${lib_dir}/${pair##*:}"
+        [[ -e "${src}" ]] || continue
+        ln -sf "$(basename "${src}")" "${dst}"
+        log "  lib: ${dst} -> $(basename "${src}")"
+    done
 }
 
 tauri_link_webkit41_as_40() {
@@ -544,6 +572,8 @@ tauri_log_webkit_status() {
         pkg-config --modversion webkit2gtk-4.0 2>&1 || true
         ls -la /usr/lib/x86_64-linux-gnu/pkgconfig/javascriptcoregtk*.pc 2>&1 || true
         ls -la /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk*.pc 2>&1 || true
+        ls -la /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.* 2>&1 || true
+        ls -la /usr/lib/x86_64-linux-gnu/libjavascriptcoregtk-4.* 2>&1 || true
     } >> "${log_file}" 2>&1
 }
 
@@ -554,7 +584,7 @@ ensure_tauri_deps() {
         libssl-dev patchelf pkg-config libsoup2.4-dev \
         >/dev/null 2>&1 || true
 
-    if tauri_webkit4_ready; then
+    if tauri_webkit4_pkg_ready && tauri_webkit4_link_ready; then
         ok "WebKitGTK 4.0 (Tauri v1) 준비됨"
         return 0
     fi
@@ -565,19 +595,20 @@ ensure_tauri_deps() {
     if apt-cache show libwebkit2gtk-4.0-dev &>/dev/null; then
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.0-dev >/dev/null 2>&1 || true
-        if tauri_webkit4_ready; then
+        if tauri_webkit4_pkg_ready && tauri_webkit4_link_ready; then
             ok "libwebkit2gtk-4.0-dev 설치됨"
             return 0
         fi
     fi
 
-    # Ubuntu 24.04+: 4.1만 제공 → pkg-config 4.0 별칭 (Tauri v1 우회)
+    # Ubuntu 24.04+: 4.1만 제공 → pkg-config + shared lib 4.0 별칭 (Tauri v1 우회)
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
         >/dev/null 2>&1 || true
     tauri_link_webkit41_as_40
-    if tauri_webkit4_ready; then
-        ok "WebKitGTK 4.1 + 4.0 pkg-config 별칭 (Ubuntu 24+)"
+    tauri_link_webkit41_libs_as_40
+    if tauri_webkit4_pkg_ready && tauri_webkit4_link_ready; then
+        ok "WebKitGTK 4.1 + 4.0 별칭 (Ubuntu 24+)"
         return 0
     fi
 
@@ -600,12 +631,12 @@ EOF
         libwebkit2gtk-4.0-dev >/dev/null 2>&1 || true
     rm -f "${jammy_list}" "${jammy_pin}"
     apt-get update -qq 2>/dev/null || true
-    if tauri_webkit4_ready; then
+    if tauri_webkit4_pkg_ready && tauri_webkit4_link_ready; then
         ok "Jammy WebKitGTK 4.0 설치됨"
         return 0
     fi
 
-    warn "javascriptcoregtk-4.0 / webkit2gtk-4.0 를 찾을 수 없습니다"
+    warn "javascriptcoregtk-4.0 / webkit2gtk-4.0 (pkg-config 또는 shared lib) 를 찾을 수 없습니다"
     warn "수동 확인: pkg-config --exists javascriptcoregtk-4.0"
     warn "수동 설치: sudo bash build/wsl-build.sh --setup"
     return 1
@@ -675,7 +706,10 @@ build_gui_wsl() {
             continue
         fi
 
-        if ! tauri_webkit4_ready; then
+        if tauri_webkit4_pkg_ready && ! tauri_webkit4_link_ready; then
+            tauri_link_webkit41_libs_as_40 >> "${OUT_DIR}/gui-build.log" 2>&1 || true
+        fi
+        if ! tauri_webkit4_pkg_ready || ! tauri_webkit4_link_ready; then
             ensure_tauri_deps >> "${OUT_DIR}/gui-build.log" 2>&1 || true
         fi
         tauri_export_pkg_config
