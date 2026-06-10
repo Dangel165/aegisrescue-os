@@ -377,8 +377,20 @@ build_rust_wsl() {
     source "${HOME}/.cargo/env" 2>/dev/null || \
     export PATH="${HOME}/.cargo/bin:${PATH}"
 
+    if ! command -v cargo >/dev/null 2>&1; then
+        log "Rust/Cargo가 없어 root 환경에 설치 중..."
+        apt-get update -qq 2>/dev/null || true
+        apt-get install -y --no-install-recommends \
+            curl ca-certificates build-essential pkg-config libssl-dev \
+            musl-tools musl-dev 2>/dev/null || true
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+            sh -s -- -y --default-toolchain stable --no-modify-path
+        source "${HOME}/.cargo/env"
+    fi
+
     local rust_target="x86_64-unknown-linux-musl"
     [[ "$ARCH" == "aarch64" ]] && rust_target="aarch64-unknown-linux-musl"
+    rustup target add "${rust_target}" 2>/dev/null || true
 
     log "빌드 타겟: ${rust_target} (jobs=${JOBS})"
     log "※ WSL 홈 파일시스템에서 빌드 중 (빠른 I/O)"
