@@ -668,10 +668,50 @@ ensure_nodejs() {
     return 1
 }
 
+find_tauri_binary() {
+    local project_dir="$1"
+    local bin="$2"
+    local candidate found
+
+    for candidate in \
+        "${project_dir}/src-tauri/target/release/${bin}" \
+        "${project_dir}/target/release/${bin}"; do
+        [[ -f "${candidate}" ]] && { echo "${candidate}"; return 0; }
+    done
+
+    found=$(find "${project_dir}/src-tauri/target/release" -type f -name "${bin}" 2>/dev/null | head -1)
+    [[ -n "${found}" ]] && { echo "${found}"; return 0; }
+
+    found=$(find "${project_dir}/src-tauri/target/release/bundle" -type f -name "${bin}" 2>/dev/null | head -1)
+    [[ -n "${found}" ]] && { echo "${found}"; return 0; }
+    return 1
+}
+
+copy_tauri_binary() {
+    local project="$1"
+    local bin="$2"
+    local src
+
+    mkdir -p "${TOOLS_DIR}"
+    if ! src=$(find_tauri_binary "${WSL_HOME}/${project}" "${bin}"); then
+        warn "  ${bin} — 빌드 산출물 없음 (target/release 또는 bundle 확인)"
+        find "${WSL_HOME}/${project}/src-tauri/target" -type f \( -name "${bin}" -o -name "*.AppImage" -o -name "*.deb" \) 2>/dev/null | \
+            head -10 >> "${OUT_DIR}/gui-build.log" || true
+        return 1
+    fi
+
+    cp "${src}" "${TOOLS_DIR}/${bin}"
+    chmod +x "${TOOLS_DIR}/${bin}" 2>/dev/null || true
+    ok "  ${bin} 빌드 완료 ($(du -sh "${TOOLS_DIR}/${bin}" | cut -f1)) ← ${src#${WSL_HOME}/}"
+    return 0
+}
+
 # ─── GUI 빌드 ────────────────────────────────────────────────────
 build_gui_wsl() {
     step "GUI 빌드 (AegisCenter + Installer)"
     [[ $SKIP_GUI -eq 1 ]] && { ok "건너뜀"; return 0; }
+
+    mkdir -p "${TOOLS_DIR}"
 
     if ! ensure_cargo; then
         warn "Cargo 없음 — GUI 빌드 건너뜀"
@@ -728,9 +768,7 @@ build_gui_wsl() {
 
         local bin="aegiscenter"
         [[ "$project" == "installer" ]] && bin="aegis-installer"
-        [[ -f "src-tauri/target/release/${bin}" ]] && \
-            cp "src-tauri/target/release/${bin}" "${TOOLS_DIR}/" && \
-            ok "  ${bin} 빌드 완료"
+        copy_tauri_binary "${project}" "${bin}" || true
     done
 }
 
