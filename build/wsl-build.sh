@@ -52,6 +52,16 @@ export TZ="${TZ:-Etc/UTC}"
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
 C='\033[0;36m'; B='\033[1m'; N='\033[0m'
 
+# echo -e treats \a \b etc. as escapes — use forward slashes for Windows paths.
+win_display_path() {
+    local p="${1:-${WIN_SRC}}"
+    if [[ "${p}" =~ ^/mnt/([a-z])/(.*)$ ]]; then
+        printf '%s:/%s' "${BASH_REMATCH[1]^^}" "${BASH_REMATCH[2]}"
+    else
+        printf '%s' "${p}"
+    fi
+}
+
 log()  { echo -e "${C}[$(date +%H:%M:%S)]${N} $*"; }
 ok()   { echo -e "${G}✓${N} $*"; }
 warn() { echo -e "${Y}⚠${N} $*"; }
@@ -1066,7 +1076,7 @@ build_iso_wsl() {
     if [[ -d "${WIN_SRC}/build/out" ]] || mkdir -p "${WIN_SRC}/build/out" 2>/dev/null; then
         log "Windows 출력 폴더로 복사 중..."
         cp "${ISO_NAME}"* "${WIN_SRC}/build/out/" 2>/dev/null && \
-            ok "Windows로 복사 완료: F:\\ofntkd\\aegisrescue\\build\\out\\"
+            ok "Windows로 복사 완료: $(win_display_path "${WIN_SRC}/build/out/")"
     fi
 
     local iso_size
@@ -1079,7 +1089,7 @@ build_iso_wsl() {
     echo -e "  ISO: ${C}${ISO_NAME}${N}"
     echo -e "  크기: ${iso_size}"
     echo -e "  SHA256: $(head -1 "${ISO_NAME}.sha256" | cut -d' ' -f1)"
-    echo -e "  Windows 경로: ${Y}F:\\ofntkd\\aegisrescue\\build\\out\\$(basename "${ISO_NAME}")${N}"
+    echo -e "  Windows 경로: ${Y}$(win_display_path "${WIN_SRC}/build/out/$(basename "${ISO_NAME}")")${N}"
     echo ""
     echo -e "  USB 기록 (WSL):   ${Y}sudo dd if=${ISO_NAME} of=/dev/sdX bs=4M status=progress${N}"
     echo -e "  USB 기록 (Win):   ${Y}Rufus 또는 balenaEtcher 사용${N}"
