@@ -44,6 +44,10 @@ ISO_NAME="${OUT_DIR}/aegisrescue-${VERSION}-${ARCH}.iso"
 DO_SETUP=0; DO_COPY=0; SKIP_RUST=0; SKIP_GUI=0
 SKIP_BASE=0; ISO_ONLY=0; QEMU_TEST=0
 
+# Never allow apt/debconf packages such as tzdata to stop the build.
+export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
+export TZ="${TZ:-Etc/UTC}"
+
 # ─── 색상 ──────────────────────────────────────────────────────
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
 C='\033[0;36m'; B='\033[1m'; N='\033[0m'
@@ -320,8 +324,13 @@ EOF
 
     # 호스트명 / 로케일
     echo "aegisrescue" > "${CHROOT_DIR}/etc/hostname"
-    chroot "${CHROOT_DIR}" apt-get update -qq 2>/dev/null || true
-    chroot "${CHROOT_DIR}" apt-get install -y --no-install-recommends \
+    echo "Etc/UTC" > "${CHROOT_DIR}/etc/timezone"
+    mkdir -p "${CHROOT_DIR}/etc"
+    ln -sf /usr/share/zoneinfo/Etc/UTC "${CHROOT_DIR}/etc/localtime" 2>/dev/null || true
+    chroot "${CHROOT_DIR}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+        apt-get update -qq 2>/dev/null || true
+    chroot "${CHROOT_DIR}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+        apt-get install -y --no-install-recommends \
         pciutils usbutils ntfs-3g exfat-fuse hfsplus hfsutils btrfs-progs \
         xfsprogs dosfstools parted gdisk fdisk \
         clamav yara testdisk gddrescue dc3dd \
@@ -348,8 +357,10 @@ EOF
 
     # HWE 커널 설치
     log "커널 설치 중..."
-    chroot "${CHROOT_DIR}" apt-get update -qq 2>/dev/null || true
-    chroot "${CHROOT_DIR}" apt-get install -y --no-install-recommends \
+    chroot "${CHROOT_DIR}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+        apt-get update -qq 2>/dev/null || true
+    chroot "${CHROOT_DIR}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+        apt-get install -y --no-install-recommends \
         linux-image-generic initramfs-tools \
         2>/dev/null | grep -E "^(Setting up|Unpacking)" | head -10 || true
 
