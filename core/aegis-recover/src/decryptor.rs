@@ -93,9 +93,13 @@ impl<'a> Decryptor<'a> {
     }
 
     async fn try_gandcrab(&self, target: &Path, output: &Path) -> anyhow::Result<RecoveryStats> {
+        let args = vec![
+            target.to_string_lossy().into_owned(),
+            output.to_string_lossy().into_owned(),
+        ];
         let stats = run_external_decryptor(
             "bitdefender_gandcrab_decryptor",
-            &[target.to_string_lossy().as_ref(), output.to_string_lossy().as_ref()],
+            &args,
             target,
         ).await;
         Ok(stats)
@@ -124,8 +128,8 @@ impl<'a> Decryptor<'a> {
 
 async fn run_external_decryptor(
     tool: &str,
-    args: &[&str],
-    target: &Path,
+    args: &[String],
+    _target: &Path,
 ) -> RecoveryStats {
     let tool_path = format!("/usr/share/aegis/decryptors/{}", tool);
 
