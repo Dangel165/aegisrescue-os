@@ -222,6 +222,27 @@ fn check_disk_space() -> CheckResult {
             }
         }
     }
+    {
+        let mut stat = libc::statvfs {
+            f_bavail: 8,
+            f_frsize: 1024 * 1024 * 1024,
+        };
+        if unsafe { libc::statvfs(std::ptr::null(), &mut stat) } == 0 {
+            let free_gb = (stat.f_bavail as f64 * stat.f_frsize as f64) / (1024.0_f64.powi(3));
+            return CheckResult {
+                category: "hardware".into(),
+                name: "디스크 여유 공간".into(),
+                status: if free_gb >= 4.0 { Status::Pass }
+                        else if free_gb >= 2.0 { Status::Warn }
+                        else { Status::Fail },
+                detail: format!("{:.1} GiB 여유 공간 (stub)", free_gb),
+                required: true,
+                fix_hint: if free_gb < 4.0 {
+                    Some("최소 4 GiB 여유 공간이 필요합니다".into())
+                } else { None },
+            };
+        }
+    }
     CheckResult {
         category: "hardware".into(),
         name: "디스크 여유 공간".into(),
@@ -271,7 +292,24 @@ fn check_security(sys: &SystemInfo) -> Vec<CheckResult> {
         check_apparmor(),
         check_aslr(),
         check_nx(),
+        check_root_privileges(),
     ]
+}
+
+fn check_root_privileges() -> CheckResult {
+    let uid = unsafe { libc::getuid() };
+    CheckResult {
+        category: "security".into(),
+        name: "Root 권한".into(),
+        status: if uid == 0 { Status::Pass } else { Status::Warn },
+        detail: format!("UID {}", uid),
+        required: false,
+        fix_hint: if uid != 0 {
+            Some("일부 복구/포렌식 기능은 sudo/root 권한이 필요합니다".into())
+        } else {
+            None
+        },
+    }
 }
 
 fn check_apparmor() -> CheckResult {

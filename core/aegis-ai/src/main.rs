@@ -36,6 +36,7 @@ fn main() -> anyhow::Result<()> {
         println!("Class:      {:?}", result.class);
         println!("Confidence: {:.1}%", result.confidence * 100.0);
         println!("Entropy:    {:.2} bits/byte", features.entropy * 8.0);
+        println!("Features:   {} dims (model input)", FeatureVector::FEATURE_DIM);
         if !result.key_features.is_empty() {
             println!("Reasons:");
             for r in &result.key_features {

@@ -1,7 +1,6 @@
 //! 증거 이미징 — 해시 체인 보장, 쓰기 차단
 
 use aegis_common::hash::ForensicHashes;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub struct CaptureResult {
@@ -28,13 +27,12 @@ pub async fn capture_evidence(source: &Path, output_dir: &Path) -> anyhow::Resul
     );
 
     // dc3dd 또는 dd 로 이미징 (쓰기 차단 확인 후)
-    let captured = if source.is_file() || is_block_device(source) {
+    if source.is_file() || is_block_device(source) {
         capture_with_dc3dd(source, &image_path).await
-            .or_else(|_| capture_with_dd(source, &image_path))
+            .or_else(|_| capture_with_dd(source, &image_path))?;
     } else {
-        // 디렉터리: tar로 아카이브
-        capture_directory(source, &image_path)
-    }?;
+        capture_directory(source, &image_path)?;
+    }
 
     // 캡처 후 해시
     let hashes = ForensicHashes::compute(&image_path)?;
@@ -157,6 +155,7 @@ pub fn verify_hashes(hash_file: &Path) -> anyhow::Result<Vec<(String, bool)>> {
 }
 
 fn is_block_device(path: &Path) -> bool {
+    tracing::debug!(path = %path.display(), "checking block device type");
     #[cfg(unix)]
     {
         use std::os::unix::fs::FileTypeExt;
@@ -165,5 +164,7 @@ fn is_block_device(path: &Path) -> bool {
             .unwrap_or(false)
     }
     #[cfg(not(unix))]
-    { false }
+    {
+        path.to_string_lossy().starts_with("/dev/")
+    }
 }

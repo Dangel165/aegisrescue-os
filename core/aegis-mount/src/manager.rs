@@ -136,7 +136,9 @@ impl MountManager {
         #[cfg(not(target_os = "linux"))]
         {
             // 비-Linux 환경(테스트용): mount 커맨드 호출
-            let mut args = vec![
+            let args = vec![
+                "-t".to_string(),
+                fs_type_to_str(fs_type),
                 "-o".to_string(),
                 options.to_string(),
                 device.to_string_lossy().into_owned(),

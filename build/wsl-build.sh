@@ -444,6 +444,32 @@ build_rust_wsl() {
     ok "Rust 빌드 완료"
 }
 
+ensure_nodejs() {
+    if command -v npm &>/dev/null && command -v node &>/dev/null; then
+        ok "Node.js $(node --version) / npm $(npm --version) 사용"
+        return 0
+    fi
+
+    log "Node.js/npm 없음 — 설치 중..."
+    apt-get update -qq 2>/dev/null || true
+
+    if apt-get install -y --no-install-recommends nodejs npm \
+        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -5; then
+        :
+    else
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - 2>/dev/null || true
+        apt-get install -y nodejs 2>/dev/null || true
+    fi
+
+    if command -v npm &>/dev/null && command -v node &>/dev/null; then
+        ok "Node.js $(node --version) / npm $(npm --version) 설치됨"
+        return 0
+    fi
+
+    warn "Node.js/npm 설치 실패"
+    return 1
+}
+
 # ─── GUI 빌드 ────────────────────────────────────────────────────
 build_gui_wsl() {
     step "GUI 빌드 (AegisCenter + Installer)"
@@ -452,14 +478,34 @@ build_gui_wsl() {
     source "${HOME}/.cargo/env" 2>/dev/null || \
     export PATH="${HOME}/.cargo/bin:${PATH}"
 
+    if ! ensure_nodejs; then
+        warn "GUI 빌드 건너뜀 (CLI 도구만 ISO에 포함)"
+        warn "GUI가 필요하면: sudo bash build/wsl-build.sh --setup"
+        return 0
+    fi
+
+    # Tauri 빌드 의존성 (없으면 설치 시도)
+    apt-get install -y --no-install-recommends \
+        libwebkit2gtk-4.0-dev libgtk-3-dev \
+        libayatana-appindicator3-dev librsvg2-dev \
+        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3 || true
+
     # WSL에서 Tauri는 Xvfb 없이 빌드 가능 (DISPLAY 불필요)
     for project in gui installer; do
         log "${project} 빌드 중..."
         cd "${WSL_HOME}/${project}"
-        npm install --prefer-offline 2>/dev/null || npm install
-        DISPLAY="" cargo tauri build 2>&1 | \
-            grep -E "^(Compiling|Finished|error|warning:.*unused)" | tail -5 || \
+        if ! npm install --prefer-offline 2>/dev/null && ! npm install; then
+            warn "${project}: npm install 실패 (건너뜀)"
+            continue
+        fi
+
+        DISPLAY="" cargo tauri build 2>&1 | tail -20
+        local tauri_status=${PIPESTATUS[0]}
+        if [[ "${tauri_status}" -ne 0 ]]; then
             warn "${project} 빌드 실패 (건너뜀)"
+            continue
+        fi
+
         local bin="aegiscenter"
         [[ "$project" == "installer" ]] && bin="aegis-installer"
         [[ -f "src-tauri/target/release/${bin}" ]] && \

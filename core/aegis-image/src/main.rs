@@ -76,8 +76,8 @@ async fn main() -> anyhow::Result<()> {
             if damaged {
                 println!("Using ddrescue mode for damaged disk...");
                 let stats = ddrescue::image_damaged_disk(&source, &dest).await?;
-                println!("✓ Rescued: {} sectors ({} errors)",
-                    stats.rescued_sectors, stats.error_sectors);
+                println!("✓ Rescued: {} sectors ({} errors, {} bytes)",
+                    stats.rescued_sectors, stats.error_sectors, stats.size_bytes);
             } else {
                 let image_path = clone::create_image(&source, &dest, compress).await?;
                 println!("✓ Image created: {}", image_path.display());

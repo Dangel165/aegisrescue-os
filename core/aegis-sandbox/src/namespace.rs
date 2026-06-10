@@ -19,6 +19,9 @@ pub async fn run_in_namespace(
     let sample_dest = format!("{}/sample", sandbox_root);
     std::fs::copy(sample, &sample_dest)?;
 
+    let seccomp_path = format!("{}/seccomp.json", sandbox_root);
+    std::fs::write(&seccomp_path, serde_json::to_string_pretty(&crate::seccomp::seccomp_profile())?)?;
+
     // 3. unshare로 네임스페이스 생성 후 bubblewrap으로 실행
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(timeout_secs),
@@ -50,32 +53,40 @@ fn setup_sandbox_rootfs(root: &str) -> anyhow::Result<()> {
 }
 
 async fn run_with_bwrap(sandbox_root: &str, sample: &str) -> anyhow::Result<serde_json::Value> {
+    let strace_log = format!("{}/strace.log", sandbox_root);
+    let seccomp_path = format!("{}/seccomp.json", sandbox_root);
+
     // bubblewrap (bwrap) — 네임스페이스 + seccomp 격리
     let output = tokio::process::Command::new("bwrap")
         .args([
             "--ro-bind", "/usr", "/usr",
             "--ro-bind", "/lib", "/lib",
             "--ro-bind", "/lib64", "/lib64",
+            "--ro-bind", sandbox_root, sandbox_root,
             "--proc", "/proc",
             "--dev", "/dev",
             "--tmpfs", "/tmp",
-            "--unshare-all",          // 모든 네임스페이스 격리
-            "--new-session",          // 새 세션 (ptrace 방지)
+            "--unshare-all",
+            "--new-session",
             "--die-with-parent",
-            "--", "strace", "-f", "-o", "/tmp/strace.log", sample,
+            "--", "strace", "-f", "-o", strace_log.as_str(), sample,
         ])
         .output()
         .await?;
 
-    let strace_log = std::fs::read_to_string("/tmp/strace.log").unwrap_or_default();
+    let strace_log_content = std::fs::read_to_string(&strace_log).unwrap_or_default();
+    let seccomp_profile = std::fs::read_to_string(&seccomp_path).unwrap_or_default();
 
     Ok(serde_json::json!({
         "status": "completed",
+        "sandbox_root": sandbox_root,
         "exit_code": output.status.code(),
         "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
         "stderr": String::from_utf8_lossy(&output.stderr).to_string(),
-        "syscalls_traced": strace_log.lines().count(),
-        "suspicious_syscalls": analyze_strace(&strace_log),
+        "seccomp_rules": crate::seccomp::ALLOWED_SYSCALLS.len(),
+        "seccomp_profile_bytes": seccomp_profile.len(),
+        "syscalls_traced": strace_log_content.lines().count(),
+        "suspicious_syscalls": analyze_strace(&strace_log_content),
     }))
 }
 

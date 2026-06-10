@@ -7,7 +7,7 @@ mod shadow;
 mod verifier;
 
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -95,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
                 stats.total,
                 stats.failed
             );
+            verify_output_dir(&output)?;
         }
 
         Commands::Vss { target, output } => {
@@ -106,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
             let carver = carver::FileCarver::new(&types);
             let stats = carver.carve(&device, &output).await?;
             println!("Carving complete: {} files recovered", stats.total_carved);
+            verify_output_dir(&output)?;
         }
 
         Commands::Auto { target, output } => {
@@ -149,8 +151,43 @@ async fn main() -> anyhow::Result<()> {
             }
 
             println!();
+            verify_output_dir(&output)?;
             println!("✓ Auto recovery completed. Output: {}", output.display());
         }
+    }
+
+    Ok(())
+}
+
+fn verify_output_dir(output: &Path) -> anyhow::Result<()> {
+    if !output.exists() {
+        return Ok(());
+    }
+
+    let mut valid = 0u64;
+    let mut invalid = 0u64;
+
+    for entry in walkdir::WalkDir::new(output)
+        .max_depth(6)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let result = verifier::verify_recovered_file(entry.path());
+        if result.is_valid {
+            valid += 1;
+        } else {
+            invalid += 1;
+            tracing::warn!(
+                path = %result.path.display(),
+                reason = %result.reason,
+                "recovered file failed verification"
+            );
+        }
+    }
+
+    if valid + invalid > 0 {
+        println!("Verification: {} valid, {} invalid", valid, invalid);
     }
 
     Ok(())

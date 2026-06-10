@@ -44,10 +44,20 @@ impl HeuristicEngine {
 
         Some(DetectionResult {
             engine: DetectionEngine::Heuristic,
-            signature: Some("Heuristic.Generic".into()),
+            signature: Some(format!("Heuristic.Generic:{}", path.file_name().unwrap_or_default().to_string_lossy())),
             confidence: score.min(1.0),
-            details: Some(indicators.join("; ")),
+            details: Some(format!("{} — {}", path.display(), indicators.join("; "))),
         })
+    }
+}
+
+impl super::Engine for HeuristicEngine {
+    fn name(&self) -> &'static str {
+        "heuristic"
+    }
+
+    fn scan_bytes(&self, data: &[u8]) -> super::EngineResult {
+        self.scan(Path::new("<memory>"), data)
     }
 }
 

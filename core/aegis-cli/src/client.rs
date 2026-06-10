@@ -24,3 +24,8 @@ pub async fn send_request(req: &DaemonRequest) -> anyhow::Result<DaemonResponse>
     let response: DaemonResponse = serde_json::from_str(response_line.trim())?;
     Ok(response)
 }
+
+pub fn send_request_sync(req: &DaemonRequest) -> anyhow::Result<DaemonResponse> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(send_request(req))
+}

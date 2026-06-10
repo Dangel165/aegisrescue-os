@@ -1,6 +1,6 @@
 //! Windows/Linux 포렌식 아티팩트 수집
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub async fn collect_all(root: &Path, output: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(output)?;
@@ -71,9 +71,16 @@ async fn collect_usn_journal(root: &Path, output: &Path) {
 }
 
 fn collect_shimcache(root: &Path, output: &Path) {
-    // AppCompatCache (shimcache)는 SYSTEM 하이브에 포함됨 (별도 파싱 필요)
-    // 여기서는 SYSTEM 하이브가 이미 수집되어 있으면 shimcache는 별도 파싱 도구로 처리
     let system_hive = output.join("registry/SYSTEM");
+    if !system_hive.exists() {
+        let source_hive = root.join("Windows/System32/config/SYSTEM");
+        if source_hive.exists() {
+            if let Some(parent) = system_hive.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            std::fs::copy(&source_hive, &system_hive).ok();
+        }
+    }
     if system_hive.exists() {
         // AppCompatCacheParser (외부 도구) 또는 자체 파서
         let system_hive_arg = system_hive.to_string_lossy().into_owned();

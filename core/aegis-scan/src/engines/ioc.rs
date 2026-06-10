@@ -29,6 +29,17 @@ impl IocEngine {
     }
 }
 
+impl super::Engine for IocEngine {
+    fn name(&self) -> &'static str {
+        "ioc"
+    }
+
+    fn scan_bytes(&self, data: &[u8]) -> super::EngineResult {
+        let hash = aegis_common::hash::sha256_bytes(data);
+        self.check(&hash)
+    }
+}
+
 fn load_ioc_hashes(path: &Path) -> HashSet<String> {
     // IOC DB는 여러 파일에서 로드 (STIX/MISP 변환된 단순 해시 목록)
     let mut hashes = HashSet::new();

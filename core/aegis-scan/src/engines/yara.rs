@@ -67,6 +67,22 @@ impl YaraEngine {
     }
 }
 
+impl super::Engine for YaraEngine {
+    fn name(&self) -> &'static str {
+        "yara"
+    }
+
+    fn scan_bytes(&self, data: &[u8]) -> super::EngineResult {
+        let tmp = std::env::temp_dir().join(format!("aegis_yara_{}", std::process::id()));
+        if std::fs::write(&tmp, data).is_err() {
+            return None;
+        }
+        let result = self.scan(&tmp, data);
+        let _ = std::fs::remove_file(&tmp);
+        result
+    }
+}
+
 fn which_yara() -> bool {
     std::process::Command::new("yara")
         .arg("--version")

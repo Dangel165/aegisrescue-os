@@ -44,7 +44,7 @@ pub async fn build_timeline(root: &Path, output: &Path) -> anyhow::Result<()> {
                 event_type: "atime".into(),
                 path: path.to_string_lossy().to_string(),
                 size: metadata.len(),
-                permissions: None,
+                permissions: get_permissions(&metadata),
             });
         }
 
@@ -61,7 +61,7 @@ pub async fn build_timeline(root: &Path, output: &Path) -> anyhow::Result<()> {
                     event_type: "ctime".into(),
                     path: path.to_string_lossy().to_string(),
                     size: metadata.len(),
-                    permissions: None,
+                    permissions: get_permissions(&metadata),
                 });
             }
         }
@@ -92,5 +92,8 @@ fn get_permissions(metadata: &std::fs::Metadata) -> Option<String> {
         Some(format!("{:o}", metadata.permissions().mode()))
     }
     #[cfg(not(unix))]
-    { None }
+    {
+        let _ = metadata.len();
+        None
+    }
 }

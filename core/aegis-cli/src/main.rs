@@ -6,7 +6,6 @@ mod client;
 mod display;
 
 use aegis_common::ipc::{DaemonRequest, DaemonResponse};
-use aegis_common::types::JobType;
 use clap::{Parser, Subcommand};
 use console::style;
 use std::path::PathBuf;
@@ -204,8 +203,21 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Network { mode } => {
-            println!("Network mode change requires aegisd (daemon not connected in CLI mode)");
-            println!("Run: systemctl status aegisd");
+            match client::send_request_sync(&DaemonRequest::SetNetworkMode { mode: mode.clone() }) {
+                Ok(DaemonResponse::Ok) => println!("Network mode set to {}", mode),
+                Ok(DaemonResponse::Error { message, .. }) => {
+                    println!("Failed to set network mode: {}", message);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    println!("{}", e);
+                    std::process::exit(1);
+                }
+                _ => {
+                    println!("Unexpected response from aegisd");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 

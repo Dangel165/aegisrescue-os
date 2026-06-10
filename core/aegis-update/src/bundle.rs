@@ -103,6 +103,12 @@ pub fn apply_bundle(
             .as_str()
             .unwrap_or("bundle")
             .to_string();
+        let expected_hash = bundle_manifest[&target_name]["sha256"].as_str();
+        if let Some(expected) = expected_hash {
+            if !verify::verify_hash(&src, expected)? {
+                anyhow::bail!("번들 해시 불일치: {}", target.display_name());
+            }
+        }
         let sha256 = verify::compute_sha256(&src).unwrap_or_default();
         let size = dir_size(&src);
 

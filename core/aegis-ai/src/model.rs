@@ -34,9 +34,18 @@ impl AiClassifier {
     }
 
     pub fn classify(&self, features: &FeatureVector) -> AiResult {
+        if let Some(path) = &self.model_path {
+            let input = features.to_vec();
+            tracing::debug!(
+                model = %path.display(),
+                feature_dim = FeatureVector::FEATURE_DIM,
+                vector_len = input.len(),
+                "prepared ONNX-ready feature vector"
+            );
+        }
+
         if self.model_loaded {
-            // ONNX 추론 (tract/onnxruntime 통합 시 여기서 실행)
-            // 현재는 특징 기반 규칙 앙상블로 대체
+            // ONNX 추론 (tract/onnxruntime 통합 시 model_path + input 사용)
             self.heuristic_classify(features)
         } else {
             self.heuristic_classify(features)
@@ -49,6 +58,7 @@ impl AiClassifier {
         let mut scores = [0.0f32; 7]; // 7개 클래스
 
         // 랜섬웨어 지표
+        scores[0] += f.size_normalized * 0.1;
         scores[0] += f.entropy * 0.4;            // 높은 엔트로피
         scores[0] += f.suspicious_strings * 0.3; // 의심 문자열
         scores[0] += f.crypto_imports * 0.3;     // 암호화 API
@@ -61,6 +71,9 @@ impl AiClassifier {
         if f.section_count < 0.2 { scores[1] += 0.2; }
 
         // 트로이목마 지표
+        if f.unsigned > 0.5 {
+            scores[2] += 0.15;
+        }
         scores[2] += f.network_imports * 0.4;
         scores[2] += f.process_imports * 0.3;
         scores[2] += f.registry_imports * 0.2;
@@ -77,6 +90,13 @@ impl AiClassifier {
         // 크립토마이너 지표
         scores[5] += f.crypto_imports * 0.5;
         scores[5] += f.network_imports * 0.3;
+
+        // 바이트 히스토그램이 지나치게 평탄하면 패킹/암호화 의심
+        let hist_peak = f.byte_histogram.iter().cloned().fold(0.0f32, f32::max);
+        if hist_peak < 0.02 {
+            scores[0] += 0.15;
+            scores[5] += 0.1;
+        }
 
         // 정상 (기본)
         scores[6] = 0.5 - scores.iter().sum::<f32>() * 0.1;
@@ -116,7 +136,22 @@ impl AiClassifier {
     fn explain(&self, f: &FeatureVector, class_idx: usize) -> Vec<String> {
         let mut reasons = vec![];
 
+        let class_hint = match class_idx {
+            0 => "Primary class: Ransomware",
+            1 => "Primary class: Rootkit",
+            2 => "Primary class: Trojan",
+            3 => "Primary class: Worm",
+            4 => "Primary class: Backdoor",
+            5 => "Primary class: Cryptominer",
+            _ => "Primary class: Clean",
+        };
+        reasons.push(class_hint.into());
+
         if f.entropy > 0.85 { reasons.push(format!("High entropy ({:.0}%)", f.entropy * 100.0)); }
+        if f.unsigned > 0.5 { reasons.push("Unsigned executable".into()); }
+        if f.size_normalized > 0.75 {
+            reasons.push(format!("Large binary footprint ({:.0}% of 100MB cap)", f.size_normalized * 100.0));
+        }
         if f.has_wx_section > 0.5 { reasons.push("W+X section present".into()); }
         if f.packing_score > 0.5 { reasons.push("Packed binary".into()); }
         if f.suspicious_strings > 0.3 { reasons.push("Suspicious strings found".into()); }

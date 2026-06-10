@@ -2,7 +2,8 @@
 
 use crate::state::AppState;
 use aegis_common::ipc::{DaemonRequest, DaemonResponse, SystemStatus};
-use aegis_common::types::{AegisJob, JobStatus, JobType};
+use aegis_common::policy::NetworkMode;
+use aegis_common::types::{AegisJob, DiskInfo, JobStatus, PartitionTableType};
 use chrono::Utc;
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -138,12 +139,29 @@ async fn process_request(req: DaemonRequest, state: &AppState) -> DaemonResponse
                     .iter().filter(|j| j.status == JobStatus::Running).count(),
                 queued_jobs: state.list_jobs().await
                     .iter().filter(|j| j.status == JobStatus::Queued).count(),
-                network_mode: format!("{:?}", state.policy().network.default),
+                network_mode: format!("{:?}", state.network_mode().await),
                 secure_boot_active: check_secure_boot(),
                 dm_verity_active: check_dm_verity(),
                 quarantine_count: 0,
                 total_threats_detected: state.total_threats().await,
             })
+        }
+
+        DaemonRequest::ListDisks => {
+            DaemonResponse::Disks(list_block_devices())
+        }
+
+        DaemonRequest::SetNetworkMode { mode } => {
+            match parse_network_mode(&mode) {
+                Some(net_mode) => {
+                    state.set_network_mode(net_mode).await;
+                    DaemonResponse::Ok
+                }
+                None => DaemonResponse::Error {
+                    code: "INVALID_MODE".into(),
+                    message: format!("Unknown network mode: {}", mode),
+                },
+            }
         }
 
         DaemonRequest::Shutdown => {
@@ -174,4 +192,56 @@ fn check_dm_verity() -> bool {
     std::fs::read_to_string("/proc/mounts")
         .map(|m| m.contains("dm-verity"))
         .unwrap_or(false)
+}
+
+fn parse_network_mode(mode: &str) -> Option<NetworkMode> {
+    match mode.to_ascii_lowercase().as_str() {
+        "airgap" | "air-gap" => Some(NetworkMode::AirGap),
+        "whitelist" => Some(NetworkMode::Whitelist),
+        "restricted" => Some(NetworkMode::Restricted),
+        "full" => Some(NetworkMode::Full),
+        _ => None,
+    }
+}
+
+fn list_block_devices() -> Vec<DiskInfo> {
+    let output = std::process::Command::new("lsblk")
+        .args(["-J", "-b", "-o", "NAME,SIZE,TYPE,MODEL"])
+        .output();
+
+    let Ok(output) = output else {
+        return vec![];
+    };
+
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        return vec![];
+    };
+
+    let mut disks = vec![];
+    if let Some(devs) = json["blockdevices"].as_array() {
+        for dev in devs {
+            if dev["type"].as_str() != Some("disk") {
+                continue;
+            }
+            let name = dev["name"].as_str().unwrap_or("unknown");
+            disks.push(DiskInfo {
+                device: Path::new("/dev").join(name),
+                model: dev["model"].as_str().map(|s| s.to_string()),
+                serial: None,
+                size_bytes: dev["size"].as_u64().unwrap_or(0),
+                sector_size: 512,
+                partition_table: PartitionTableType::Unknown,
+                partitions: vec![],
+                health: aegis_common::types::DiskHealth {
+                    smart_available: false,
+                    overall_health: aegis_common::types::HealthStatus::Unknown,
+                    reallocated_sectors: 0,
+                    pending_sectors: 0,
+                    uncorrectable_errors: 0,
+                },
+            });
+        }
+    }
+
+    disks
 }

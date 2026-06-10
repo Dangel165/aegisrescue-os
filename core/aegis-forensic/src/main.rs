@@ -64,6 +64,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Capture { source, output } => {
             let result = imager::capture_evidence(&source, &output).await?;
             println!("✓ Evidence captured");
+            println!("  Image:   {}", result.image_path.display());
             println!("  SHA-256: {}", result.sha256);
             println!("  BLAKE3:  {}", result.blake3);
             println!("  Size:    {}", aegis_common::utils::human_bytes(result.size_bytes));

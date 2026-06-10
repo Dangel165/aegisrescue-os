@@ -111,10 +111,22 @@ impl<'a> Decryptor<'a> {
         target: &Path,
         output: &Path,
     ) -> anyhow::Result<RecoveryStats> {
+        std::fs::create_dir_all(output)?;
+
+        let ext = family.extension.as_deref().unwrap_or("");
+        let candidates = if ext.is_empty() {
+            collect_files_with_ext(target, "locked")
+        } else {
+            collect_files_with_ext(target, ext)
+        };
+
         tracing::info!(
             family = family.name,
+            target = %target.display(),
+            output = %output.display(),
+            candidates = candidates.len(),
             decryptor_url = family.decryptor_url.as_deref().unwrap_or("none"),
-            "no built-in decryptor, trying external"
+            "no built-in decryptor, cataloguing encrypted files"
         );
 
         if let Some(url) = &family.decryptor_url {
@@ -122,7 +134,18 @@ impl<'a> Decryptor<'a> {
             println!("  Download and place in /usr/share/aegis/decryptors/ for automatic use");
         }
 
-        Ok(RecoveryStats { total: 0, recovered: 0, failed: 0 })
+        let manifest = output.join("pending_decryptor_files.txt");
+        let mut lines = Vec::new();
+        for path in &candidates {
+            lines.push(path.display().to_string());
+        }
+        std::fs::write(&manifest, lines.join("\n"))?;
+
+        Ok(RecoveryStats {
+            total: candidates.len() as u64,
+            recovered: 0,
+            failed: candidates.len() as u64,
+        })
     }
 }
 
@@ -167,7 +190,7 @@ fn collect_files_with_ext(dir: &Path, ext: &str) -> Vec<std::path::PathBuf> {
 }
 
 fn try_wncry_partial_recover(src: &Path, dst: &Path) -> anyhow::Result<()> {
-    use std::io::{Read, Write};
+    use std::io::Write;
     let data = std::fs::read(src)?;
 
     // WNCRY 포맷: 매직 "WANACRY!" (8 bytes) + 암호화 블록

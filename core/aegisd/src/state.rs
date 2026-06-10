@@ -1,7 +1,7 @@
 //! 공유 앱 상태
 
 use crate::db::Database;
-use aegis_common::policy::AegisPolicy;
+use aegis_common::policy::{AegisPolicy, NetworkMode};
 use aegis_common::types::{AegisJob, JobStatus, QuarantineEntry};
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,6 +15,7 @@ pub struct AppState(Arc<Inner>);
 
 struct Inner {
     pub policy: AegisPolicy,
+    pub network_mode: RwLock<NetworkMode>,
     pub jobs: RwLock<HashMap<Uuid, AegisJob>>,
     pub quarantine: RwLock<Vec<QuarantineEntry>>,
     pub db: Mutex<Database>,
@@ -33,8 +34,11 @@ impl AppState {
         let db = Database::open(db_path).await?;
         let (event_tx, _) = broadcast::channel(1024);
 
+        let network_mode = policy.network.default.clone();
+
         Ok(Self(Arc::new(Inner {
             policy,
+            network_mode: RwLock::new(network_mode),
             jobs: RwLock::new(HashMap::new()),
             quarantine: RwLock::new(vec![]),
             db: Mutex::new(db),
@@ -95,5 +99,16 @@ impl AppState {
 
     pub fn policy(&self) -> &AegisPolicy {
         &self.0.policy
+    }
+
+    pub async fn network_mode(&self) -> NetworkMode {
+        self.0.network_mode.read().await.clone()
+    }
+
+    pub async fn set_network_mode(&self, mode: NetworkMode) {
+        *self.0.network_mode.write().await = mode.clone();
+        let mut net_policy = self.0.policy.network.clone();
+        net_policy.default = mode;
+        crate::network::apply_policy(&net_policy).await;
     }
 }

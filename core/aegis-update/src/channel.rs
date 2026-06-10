@@ -1,6 +1,6 @@
 //! 온라인 업데이트 채널 (네트워크 기능)
 
-use crate::{manifest::{ComponentRecord, Manifest}, UpdateTarget};
+use crate::{manifest::Manifest, UpdateTarget};
 use std::path::Path;
 
 /// 업데이트 가용 여부 확인 (네트워크)
@@ -9,23 +9,28 @@ pub async fn check_updates(data_dir: &Path, channel: &str) -> anyhow::Result<()>
 
     let manifest = Manifest::load(data_dir)?;
 
-    // 네트워크 피처가 없거나 에어갭 환경에서는 오프라인 모드
     #[cfg(not(feature = "network"))]
     {
         println!("\n⚠ 네트워크 업데이트 비활성화됨 (오프라인/에어갭 모드)");
+        println!("  서버: {}", update_server_url(channel));
         println!("  오프라인 번들을 사용하세요:");
         println!("  aegis-update apply --bundle <bundle.tar.zst>");
         println!("\n현재 설치된 버전:");
+        if manifest.components.is_empty() {
+            println!("  (기록된 컴포넌트 없음)");
+        } else {
+            for comp in &manifest.components {
+                println!("  - {} v{}", comp.target.display_name(), comp.version);
+            }
+        }
         crate::manifest::print_status(data_dir)?;
         return Ok(());
     }
 
     #[cfg(feature = "network")]
     {
-        check_online(data_dir, channel, &manifest).await?;
+        check_online(data_dir, channel, &manifest).await
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "network")]
@@ -69,16 +74,24 @@ pub async fn apply_online(
     #[cfg(not(feature = "network"))]
     {
         println!("⚠ 네트워크 업데이트 비활성화됨");
+        println!("  채널: {}", channel);
+        println!("  데이터: {}", data_dir.display());
+        println!("  대상: {}개 컴포넌트", targets.len());
+        for target in targets {
+            if dry_run {
+                println!("  [dry-run] {}", target.display_name());
+            } else {
+                println!("  - {}", target.display_name());
+            }
+        }
         println!("  오프라인 번들을 사용하세요: aegis-update apply --bundle <file>");
         return Ok(());
     }
 
     #[cfg(feature = "network")]
     {
-        apply_online_impl(targets, data_dir, channel, dry_run).await?;
+        apply_online_impl(targets, data_dir, channel, dry_run).await
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "network")]
@@ -124,7 +137,12 @@ async fn apply_online_impl(
                 let mut f = tokio::fs::File::create(&tmp_path).await?;
                 f.write_all(&bytes).await?;
 
-                // 번들 적용
+                if let Some(expected) = manifest.get(target).map(|c| c.sha256.as_str()) {
+                    if !crate::verify::verify_hash(&tmp_path, expected)? {
+                        anyhow::bail!("다운로드 해시 불일치: {}", target.display_name());
+                    }
+                }
+
                 crate::bundle::apply_bundle(
                     &tmp_path,
                     &[target.clone()],
@@ -158,7 +176,10 @@ fn print_update_comparison(current: &Manifest, remote: &serde_json::Value) {
     ];
 
     for t in &targets {
-        let current_ver = "unknown";
+        let current_ver = current.components.iter()
+            .find(|c| format!("{:?}", c.target).to_lowercase().contains(t))
+            .map(|c| c.version.as_str())
+            .unwrap_or("unknown");
         let remote_ver = remote[t]["version"].as_str().unwrap_or("unknown");
         let update = if current_ver != remote_ver { " ← 업데이트 가능" } else { "" };
         println!("{:<22} {:<16} {}{}", t, current_ver, remote_ver, update);
@@ -166,7 +187,7 @@ fn print_update_comparison(current: &Manifest, remote: &serde_json::Value) {
     println!();
 }
 
-fn update_server_url(channel: &str) -> String {
+pub(crate) fn update_server_url(channel: &str) -> String {
     match channel {
         "testing" => "https://updates.aegisrescue.io/testing".into(),
         _         => "https://updates.aegisrescue.io/stable".into(),

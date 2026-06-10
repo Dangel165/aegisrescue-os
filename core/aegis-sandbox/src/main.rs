@@ -85,6 +85,8 @@ async fn main() -> anyhow::Result<()> {
             println!("  Namespace isolation: {}", if check_namespace_support() { "✓" } else { "✗" });
             println!("  KVM/microVM:         {}", if check_kvm_support() { "✓" } else { "✗ (no KVM)" });
             println!("  seccomp-bpf:         {}", if check_seccomp_support() { "✓" } else { "✗" });
+            println!("  seccomp profile:     {} allowed syscalls",
+                seccomp::ALLOWED_SYSCALLS.len());
         }
     }
 

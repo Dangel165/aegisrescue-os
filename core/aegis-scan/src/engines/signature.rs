@@ -47,7 +47,6 @@ impl SignatureEngine {
     }
 
     fn scan_with_clamav(&self, data: &[u8]) -> Option<DetectionResult> {
-        use std::io::Write;
         let tmp_path = format!("/tmp/aegis_clam_{}", std::process::id());
         std::fs::write(&tmp_path, data).ok()?;
 
@@ -76,6 +75,17 @@ impl SignatureEngine {
         } else {
             None
         }
+    }
+}
+
+impl super::Engine for SignatureEngine {
+    fn name(&self) -> &'static str {
+        "signature"
+    }
+
+    fn scan_bytes(&self, data: &[u8]) -> super::EngineResult {
+        let hash = aegis_common::hash::sha256_bytes(data);
+        self.scan(data, &hash)
     }
 }
 

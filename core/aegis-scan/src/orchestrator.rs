@@ -4,6 +4,7 @@ use crate::engines::heuristic::HeuristicEngine;
 use crate::engines::ioc::IocEngine;
 use crate::engines::signature::SignatureEngine;
 use crate::engines::yara::YaraEngine;
+use crate::engines::Engine;
 use crate::pe_analyzer;
 use crate::persistence::{PersistenceChecker, PersistenceItem};
 use crate::quarantine_client;
@@ -71,6 +72,17 @@ impl Scanner {
         let heur_engine = HeuristicEngine::new();
         let yara_engine = YaraEngine::new(&self.config.yara_rules_path);
         let ioc_engine = IocEngine::new(&self.config.signatures_path);
+
+        let engines: Vec<&dyn Engine> = vec![
+            &sig_engine,
+            &heur_engine,
+            &yara_engine,
+            &ioc_engine,
+        ];
+        info!(
+            engines = engines.iter().map(|e| e.name()).collect::<Vec<_>>().join(","),
+            "detection engines ready"
+        );
 
         // 대상 파일 수집
         let files = self.collect_files();
@@ -187,12 +199,14 @@ impl Scanner {
 
         let mut detections = vec![];
 
-        // 엔진별 실행
-        if let Some(r) = sig.scan(&data, &hash) { detections.push(r); }
-        if let Some(r) = heur.scan(path, &data)  { detections.push(r); }
-        if let Some(r) = yara.scan(path, &data)  { detections.push(r); }
-        if let Some(r) = ioc.check(&hash)         { detections.push(r); }
-        if let Some(r) = analyze_binary(path)     { detections.push(r); }
+        // 엔진별 실행 (Engine trait 통합 경로)
+        let runtime_engines: Vec<&dyn Engine> = vec![sig, heur, yara, ioc];
+        for engine in runtime_engines {
+            if let Some(r) = engine.scan_bytes(&data) {
+                detections.push(r);
+            }
+        }
+        if let Some(r) = analyze_binary(path) { detections.push(r); }
 
         if detections.is_empty() {
             return Ok(None);

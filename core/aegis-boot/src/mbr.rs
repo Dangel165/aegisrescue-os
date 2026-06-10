@@ -1,36 +1,37 @@
 //! MBR/GPT 분석 및 복구
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
 
 const MBR_SIZE: usize = 512;
 const GPT_HEADER_LBA: u64 = 1;
+const GPT_HEADER_OFFSET: usize = MBR_SIZE * GPT_HEADER_LBA as usize;
 const GPT_SIGNATURE: &[u8] = b"EFI PART";
 
 pub fn analyze_boot_record(device: &Path) -> anyhow::Result<String> {
     let mut f = std::fs::File::open(device)?;
-    let mut sector = [0u8; 512 * 34]; // 첫 34 섹터 (GPT 기본 헤더 포함)
+    let mut sector = [0u8; MBR_SIZE * 34]; // 첫 34 섹터 (GPT 기본 헤더 포함)
     let read = f.read(&mut sector).unwrap_or(0);
 
     let mut report = format!("Boot Record Analysis: {}\n", device.display());
     report.push_str(&"─".repeat(60));
     report.push('\n');
 
-    if read < 512 {
+    if read < MBR_SIZE {
         report.push_str("ERROR: Could not read boot sector\n");
         return Ok(report);
     }
 
-    let mbr = &sector[..512];
+    let mbr = &sector[..MBR_SIZE];
 
     // MBR 서명 확인
-    let sig_ok = mbr[510] == 0x55 && mbr[511] == 0xAA;
+    let sig_ok = mbr[MBR_SIZE - 2] == 0x55 && mbr[MBR_SIZE - 1] == 0xAA;
     report.push_str(&format!("MBR signature (0x55AA):  {}\n",
         if sig_ok { "✓ Valid" } else { "✗ MISSING/CORRUPTED" }));
 
-    // GPT 확인 (LBA 1 = offset 512)
-    if read >= 1024 {
-        let gpt_header = &sector[512..512+8];
+    // GPT 확인 (LBA 1)
+    if read >= GPT_HEADER_OFFSET + 8 {
+        let gpt_header = &sector[GPT_HEADER_OFFSET..GPT_HEADER_OFFSET + 8];
         if gpt_header == GPT_SIGNATURE {
             report.push_str("Partition table type:    GPT\n");
             report.push_str(&analyze_gpt(&sector));
@@ -53,11 +54,11 @@ pub fn analyze_boot_record(device: &Path) -> anyhow::Result<String> {
 }
 
 fn analyze_gpt(data: &[u8]) -> String {
-    if data.len() < 1024 {
+    if data.len() < GPT_HEADER_OFFSET + 84 {
         return "  GPT: insufficient data\n".to_string();
     }
 
-    let header = &data[512..];
+    let header = &data[GPT_HEADER_OFFSET..];
 
     // GPT 헤더 파싱 (간략)
     let revision = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
