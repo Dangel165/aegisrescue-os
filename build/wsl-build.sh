@@ -686,6 +686,20 @@ find_tauri_binary() {
         -name "${bin}" -o -path "*/usr/bin/${bin}" -o -path "*/data/usr/bin/${bin}" \
         \) 2>/dev/null | head -1)
     [[ -n "${found}" ]] && { echo "${found}"; return 0; }
+
+    found=$(find "${project_dir}/src-tauri/target/release/bundle/deb" -type f -path "*/usr/bin/*" ! -name "*.png" 2>/dev/null | head -1)
+    [[ -n "${found}" ]] && { echo "${found}"; return 0; }
+    return 1
+}
+
+tauri_pick_usr_bin() {
+    local root="$1"
+    local preferred="$2"
+    local found
+
+    [[ -f "${root}/usr/bin/${preferred}" ]] && { echo "${root}/usr/bin/${preferred}"; return 0; }
+    found=$(find "${root}/usr/bin" -maxdepth 1 -type f ! -name "*.png" 2>/dev/null | head -1)
+    [[ -n "${found}" ]] && { echo "${found}"; return 0; }
     return 1
 }
 
@@ -693,7 +707,16 @@ extract_tauri_binary_from_deb() {
     local project_dir="$1"
     local bin="$2"
     local dest="$3"
-    local deb tmp found
+    local deb staging found
+
+    # Tauri가 남겨 둔 deb 스테이징 디렉터리 (압축 해제 없이 사용)
+    staging=$(find "${project_dir}/src-tauri/target/release/bundle/deb" -mindepth 1 -maxdepth 1 -type d ! -name "*.deb" 2>/dev/null | sort | tail -1)
+    if [[ -n "${staging}" ]] && found=$(tauri_pick_usr_bin "${staging}" "${bin}"); then
+        cp "${found}" "${dest}"
+        chmod +x "${dest}" 2>/dev/null || true
+        echo "${staging}"
+        return 0
+    fi
 
     deb=$(find "${project_dir}/src-tauri/target/release/bundle/deb" -name "*.deb" -type f 2>/dev/null | sort | tail -1)
     [[ -n "${deb}" ]] || return 1
@@ -702,24 +725,21 @@ extract_tauri_binary_from_deb() {
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dpkg-dev >/dev/null 2>&1 || true
     command -v dpkg-deb &>/dev/null || return 1
 
-    tmp=$(mktemp -d)
-    if ! dpkg-deb -x "${deb}" "${tmp}" 2>/dev/null; then
-        rm -rf "${tmp}"
+    staging=$(mktemp -d)
+    if ! dpkg-deb -x "${deb}" "${staging}" 2>/dev/null; then
+        rm -rf "${staging}"
         return 1
     fi
 
-    found=$(find "${tmp}" -type f -name "${bin}" 2>/dev/null | head -1)
-    [[ -z "${found}" ]] && found=$(find "${tmp}/usr/bin" -type f 2>/dev/null | head -1)
-
-    if [[ -n "${found}" ]]; then
+    if found=$(tauri_pick_usr_bin "${staging}" "${bin}"); then
         cp "${found}" "${dest}"
         chmod +x "${dest}" 2>/dev/null || true
-        rm -rf "${tmp}"
+        rm -rf "${staging}"
         echo "${deb}"
         return 0
     fi
 
-    rm -rf "${tmp}"
+    rm -rf "${staging}"
     return 1
 }
 
