@@ -48,6 +48,12 @@
     }
     scanning = false
   }
+
+  const scanModes = [
+    { id: 'quick', label: '빠른 검사', desc: '실행파일·자동시작 위주' },
+    { id: 'standard', label: '표준 검사', desc: '모든 실행 파일' },
+    { id: 'full', label: '정밀 검사', desc: '전체 파일 심층 스캔' },
+  ]
 </script>
 
 <div class="panel">
@@ -64,11 +70,7 @@
   <div class="form-group">
     <label class="label">검사 모드</label>
     <div class="mode-group">
-      {#each [
-        { id: 'quick',    label: '빠른 검사',  desc: '실행파일·자동시작 위주' },
-        { id: 'standard', label: '표준 검사',  desc: '모든 실행 파일' },
-        { id: 'full',     label: '정밀 검사',  desc: '전체 파일 심층 스캔' },
-      ] as mode}
+      {#each scanModes as mode}
         <label class="mode-card" class:selected={scanMode === mode.id}>
           <input type="radio" bind:group={scanMode} value={mode.id} />
           <div>

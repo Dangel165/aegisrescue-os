@@ -18,6 +18,11 @@
   $: showSidebar = !['language', 'installing', 'done'].includes($currentStep)
   $: showSteps = ['preflight', 'license', 'components', 'disk', 'options', 'confirm']
   $: sidebarSteps = showSteps
+
+  function stepLabel(step: string): string {
+    const labels = $t as Record<string, string>
+    return labels[`step_${step}`] ?? step
+  }
 </script>
 
 <main class="installer-root" data-lang={$currentLang}>
@@ -42,7 +47,7 @@
             <div class="step-dot">
               {#if current > idx}✓{:else}{idx - 1}{/if}
             </div>
-            <span class="step-label">{$t[`step_${step}` as keyof typeof $t] ?? step}</span>
+            <span class="step-label">{stepLabel(step)}</span>
           </div>
         {/each}
       </nav>

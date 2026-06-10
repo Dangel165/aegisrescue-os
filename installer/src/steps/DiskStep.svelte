@@ -82,6 +82,11 @@
     const gib = bytes / (1024 ** 3)
     return `${gib.toFixed(1)} GiB`
   }
+
+  $: installModes = [
+    { value: 'WholeDisk', icon: '💾', label: $t.disk_mode_whole },
+    { value: 'LiveUsb', icon: '💿', label: $t.disk_mode_live },
+  ]
 </script>
 
 <div class="step-container">
@@ -90,10 +95,7 @@
 
   <!-- 설치 모드 선택 -->
   <div class="mode-group">
-    {#each [
-      { value: 'WholeDisk',       icon: '💾', label: $t.disk_mode_whole },
-      { value: 'LiveUsb',         icon: '💿', label: $t.disk_mode_live },
-    ] as mode}
+    {#each installModes as mode}
       <label class="mode-option card" class:selected={installMode === mode.value}>
         <input
           type="radio"
