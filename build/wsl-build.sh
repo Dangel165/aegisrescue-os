@@ -512,6 +512,30 @@ tauri_link_webkit41_as_40() {
     done
 }
 
+ensure_tauri_icons() {
+    local gen_script="${WSL_HOME}/build/gen-tauri-icons.py"
+    if command -v python3 &>/dev/null && [[ -f "${gen_script}" ]]; then
+        log "Tauri RGBA 아이콘 생성 중..."
+        python3 "${gen_script}" || return 1
+        return 0
+    fi
+
+    local icon="${WSL_HOME}/gui/src-tauri/icons/32x32.png"
+    if [[ ! -f "${icon}" ]]; then
+        warn "Tauri 아이콘 없음 — python3 또는 --copy 필요"
+        return 1
+    fi
+
+    # PNG IHDR color type byte must be 6 (RGBA)
+    local ctype
+    ctype=$(python3 -c "print(open('${icon}','rb').read()[25])" 2>/dev/null || echo 0)
+    if [[ "${ctype}" != "6" ]]; then
+        warn "Tauri 아이콘이 RGBA가 아님 — python3로 gen-tauri-icons.py 실행 또는 --copy"
+        return 1
+    fi
+    return 0
+}
+
 tauri_log_webkit_status() {
     local log_file="${1:-}"
     {
@@ -635,12 +659,12 @@ build_gui_wsl() {
     fi
 
     mkdir -p "${OUT_DIR}"
-
-    if [[ ! -f "${WSL_HOME}/gui/src-tauri/icons/32x32.png" ]] && command -v python3 &>/dev/null; then
-        log "Tauri 아이콘 생성 중..."
-        python3 "${WSL_HOME}/build/gen-tauri-icons.py" >> "${OUT_DIR}/gui-build.log" 2>&1 || true
-    fi
     : > "${OUT_DIR}/gui-build.log"
+
+    if ! ensure_tauri_icons >> "${OUT_DIR}/gui-build.log" 2>&1; then
+        warn "GUI 빌드 건너뜀 (Tauri 아이콘 준비 실패)"
+        return 0
+    fi
 
     # WSL에서 Tauri는 Xvfb 없이 빌드 가능 (DISPLAY 불필요)
     for project in gui installer; do
