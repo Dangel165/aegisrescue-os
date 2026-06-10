@@ -697,8 +697,16 @@ tauri_pick_usr_bin() {
     local preferred="$2"
     local found
 
-    [[ -f "${root}/usr/bin/${preferred}" ]] && { echo "${root}/usr/bin/${preferred}"; return 0; }
-    found=$(find "${root}/usr/bin" -maxdepth 1 -type f ! -name "*.png" 2>/dev/null | head -1)
+    for candidate in \
+        "${root}/usr/bin/${preferred}" \
+        "${root}/data/usr/bin/${preferred}"; do
+        [[ -f "${candidate}" ]] && { echo "${candidate}"; return 0; }
+    done
+
+    found=$(find "${root}" -type f \( -path "*/usr/bin/${preferred}" -o -path "*/data/usr/bin/${preferred}" \) 2>/dev/null | head -1)
+    [[ -n "${found}" ]] && { echo "${found}"; return 0; }
+
+    found=$(find "${root}" -type f \( -path "*/usr/bin/*" -o -path "*/data/usr/bin/*" \) ! -name "*.png" 2>/dev/null | head -1)
     [[ -n "${found}" ]] && { echo "${found}"; return 0; }
     return 1
 }
@@ -841,9 +849,16 @@ populate_chroot_wsl() {
 
     # Aegis 도구
     mkdir -p "${CHROOT_DIR}/opt/aegis/bin"
-    [[ -d "${TOOLS_DIR}" ]] && \
+    if [[ -d "${TOOLS_DIR}" ]]; then
         cp -v "${TOOLS_DIR}/"* "${CHROOT_DIR}/opt/aegis/bin/" 2>/dev/null | \
-        grep -v "^$" | head -20 || true
+            grep -v "^$" | head -20 || true
+        for gui_bin in aegiscenter aegis-installer; do
+            [[ -f "${CHROOT_DIR}/opt/aegis/bin/${gui_bin}" ]] || \
+                warn "chroot에 ${gui_bin} 없음 — build/tools 확인"
+        done
+    else
+        warn "build/tools 없음"
+    fi
 
     # PATH
     cat > "${CHROOT_DIR}/etc/profile.d/aegis.sh" <<'EOF'
