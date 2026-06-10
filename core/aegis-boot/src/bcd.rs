@@ -36,13 +36,14 @@ async fn repair_windows_bcd_offline(windows_root: &Path) -> anyhow::Result<()> {
 
     // 3) bcdedit (Wine) 또는 hivex를 통한 BCD 재구성
     // Linux에서 bcdtool이나 직접 hive 편집 사용
-    let tools = [
-        ("bcdtool", vec!["--repair", &windows_root.to_string_lossy()]),
+    let windows_root_arg = windows_root.to_string_lossy().into_owned();
+    let tools: Vec<(&str, Vec<String>)> = vec![
+        ("bcdtool", vec!["--repair".into(), windows_root_arg]),
     ];
 
     for (tool, args) in &tools {
         let res = tokio::process::Command::new(tool)
-            .args(args.iter().map(|s| s.as_ref()).collect::<Vec<&str>>())
+            .args(args)
             .status()
             .await;
 

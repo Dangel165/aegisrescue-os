@@ -32,13 +32,14 @@ pub async fn create_image(
 
     if compress {
         // zstd 압축 파이프라인
+        let pipeline = format!(
+            "dd if={} bs=1M conv=noerror,sync status=progress | zstd -T0 -3 -o {}",
+            source.display(), image_path.display()
+        );
         let status = tokio::process::Command::new("sh")
             .args([
                 "-c",
-                &format!(
-                    "dd if={} bs=1M conv=noerror,sync status=progress | zstd -T0 -3 -o {}",
-                    source.display(), image_path.display()
-                ),
+                pipeline.as_str(),
             ])
             .status()
             .await?;
@@ -47,10 +48,12 @@ pub async fn create_image(
             return Err(anyhow::anyhow!("Image creation failed"));
         }
     } else {
+        let input = format!("if={}", source.display());
+        let output = format!("of={}", image_path.display());
         let status = tokio::process::Command::new("dd")
             .args([
-                &format!("if={}", source.display()),
-                &format!("of={}", image_path.display()),
+                input.as_str(),
+                output.as_str(),
                 "bs=1M",
                 "conv=noerror,sync",
                 "status=progress",
@@ -81,20 +84,24 @@ pub async fn clone_disk(source: &Path, dest: &Path) -> anyhow::Result<()> {
 
     let status = if let Some(fs) = fs_type {
         let tool = format!("partclone.{}", fs);
+        let source_arg = source.to_string_lossy().into_owned();
+        let dest_arg = dest.to_string_lossy().into_owned();
         tokio::process::Command::new(&tool)
             .args([
                 "-c",  // clone
-                "-s", &source.to_string_lossy(),
-                "-o", &dest.to_string_lossy(),
+                "-s", source_arg.as_str(),
+                "-o", dest_arg.as_str(),
             ])
             .status()
             .await
     } else {
         // 폴백: dd
+        let input = format!("if={}", source.display());
+        let output = format!("of={}", dest.display());
         tokio::process::Command::new("dd")
             .args([
-                &format!("if={}", source.display()),
-                &format!("of={}", dest.display()),
+                input.as_str(),
+                output.as_str(),
                 "bs=1M", "conv=noerror,sync", "status=progress",
             ])
             .status()
@@ -136,20 +143,21 @@ async fn backup_with_restic(
     incremental: bool,
     passphrase: Option<&str>,
 ) -> anyhow::Result<BackupStats> {
-    let repo = dest.to_string_lossy();
+    let repo = dest.to_string_lossy().into_owned();
+    let source_arg = source.to_string_lossy().into_owned();
     let pass = passphrase.unwrap_or("aegis_backup_default");
 
     // 초기화 (처음 실행 시)
     let _ = tokio::process::Command::new("restic")
         .env("RESTIC_PASSWORD", pass)
-        .args(["init", "-r", &repo])
+        .args(["init", "-r", repo.as_str()])
         .status()
         .await;
 
     // 백업
     let output = tokio::process::Command::new("restic")
         .env("RESTIC_PASSWORD", pass)
-        .args(["backup", "-r", &repo, &source.to_string_lossy()])
+        .args(["backup", "-r", repo.as_str(), source_arg.as_str()])
         .output()
         .await?;
 
@@ -164,19 +172,20 @@ async fn backup_with_borg(
     dest: &Path,
     passphrase: Option<&str>,
 ) -> anyhow::Result<BackupStats> {
-    let repo = dest.to_string_lossy();
+    let repo = dest.to_string_lossy().into_owned();
+    let source_arg = source.to_string_lossy().into_owned();
     let pass = passphrase.unwrap_or("aegis_backup_default");
     let archive = format!("{}::backup-{}", repo, chrono::Utc::now().format("%Y%m%d-%H%M%S"));
 
     let _ = tokio::process::Command::new("borg")
         .env("BORG_PASSPHRASE", pass)
-        .args(["init", "--encryption=repokey", &repo])
+        .args(["init", "--encryption=repokey", repo.as_str()])
         .status()
         .await;
 
     let status = tokio::process::Command::new("borg")
         .env("BORG_PASSPHRASE", pass)
-        .args(["create", "--stats", &archive, &source.to_string_lossy()])
+        .args(["create", "--stats", archive.as_str(), source_arg.as_str()])
         .status()
         .await?;
 
@@ -186,12 +195,13 @@ async fn backup_with_borg(
 async fn backup_with_tar(source: &Path, dest: &Path) -> anyhow::Result<BackupStats> {
     let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let archive = dest.join(format!("backup_{}.tar.zst", ts));
+    let pipeline = format!(
+        "tar -czf - {} | zstd -T0 -3 -o {}",
+        source.display(), archive.display()
+    );
 
     let status = tokio::process::Command::new("sh")
-        .args(["-c", &format!(
-            "tar -czf - {} | zstd -T0 -3 -o {}",
-            source.display(), archive.display()
-        )])
+        .args(["-c", pipeline.as_str()])
         .status()
         .await?;
 
@@ -200,8 +210,9 @@ async fn backup_with_tar(source: &Path, dest: &Path) -> anyhow::Result<BackupSta
 }
 
 fn detect_fs_type(device: &Path) -> Option<String> {
+    let device_arg = device.to_string_lossy().into_owned();
     let output = std::process::Command::new("blkid")
-        .args(["-o", "value", "-s", "TYPE", &device.to_string_lossy()])
+        .args(["-o", "value", "-s", "TYPE", device_arg.as_str()])
         .output()
         .ok()?;
     let s = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();

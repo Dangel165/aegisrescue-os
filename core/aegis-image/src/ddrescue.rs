@@ -21,14 +21,17 @@ pub async fn image_damaged_disk(
     );
 
     // 1차 패스: 오류 없는 영역 우선 복사
+    let source_arg = source.to_string_lossy().into_owned();
+    let dest_arg = dest.to_string_lossy().into_owned();
+    let log_arg = log_file.to_string_lossy().into_owned();
     let status = tokio::process::Command::new("ddrescue")
         .args([
             "--force",
             "--no-split",           // 1차: 빠른 복사
             "--direct",             // 캐시 우회
-            &source.to_string_lossy(),
-            &dest.to_string_lossy(),
-            &log_file.to_string_lossy(),
+            source_arg.as_str(),
+            dest_arg.as_str(),
+            log_arg.as_str(),
         ])
         .status()
         .await;
@@ -41,14 +44,15 @@ pub async fn image_damaged_disk(
     // 2차 패스: 오류 섹터 재시도 (3회)
     for pass in 2..=4 {
         tracing::info!(pass = pass, "ddrescue retry pass");
+        let retry_pass = format!("--retry-passes={}", pass);
         let _ = tokio::process::Command::new("ddrescue")
             .args([
                 "--force",
                 "--direct",
-                &format!("--retry-passes={}", pass),
-                &source.to_string_lossy(),
-                &dest.to_string_lossy(),
-                &log_file.to_string_lossy(),
+                retry_pass.as_str(),
+                source_arg.as_str(),
+                dest_arg.as_str(),
+                log_arg.as_str(),
             ])
             .status()
             .await;
@@ -69,10 +73,12 @@ async fn fallback_dd(source: &Path, dest: &Path) -> anyhow::Result<DdrescueStats
         .map(|m| m.len())
         .unwrap_or(0);
 
+    let input = format!("if={}", source.display());
+    let output = format!("of={}", dest.display());
     let status = tokio::process::Command::new("dd")
         .args([
-            &format!("if={}", source.display()),
-            &format!("of={}", dest.display()),
+            input.as_str(),
+            output.as_str(),
             "bs=4096",
             "conv=noerror,sync",
             "status=progress",

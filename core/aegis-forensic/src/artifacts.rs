@@ -76,8 +76,10 @@ fn collect_shimcache(root: &Path, output: &Path) {
     let system_hive = output.join("registry/SYSTEM");
     if system_hive.exists() {
         // AppCompatCacheParser (외부 도구) 또는 자체 파서
+        let system_hive_arg = system_hive.to_string_lossy().into_owned();
+        let output_arg = output.to_string_lossy().into_owned();
         let _ = std::process::Command::new("appcompatcacheparser")
-            .args(["-f", &system_hive.to_string_lossy(), "--csv", &output.to_string_lossy()])
+            .args(["-f", system_hive_arg.as_str(), "--csv", output_arg.as_str()])
             .status();
     }
 }

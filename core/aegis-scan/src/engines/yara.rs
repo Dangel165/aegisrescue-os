@@ -28,12 +28,14 @@ impl YaraEngine {
     pub fn scan(&self, path: &Path, _data: &[u8]) -> Option<DetectionResult> {
         if !self.available { return None; }
 
+        let rules_arg = self.rules_path.to_string_lossy().into_owned();
+        let path_arg = path.to_string_lossy().into_owned();
         let output = std::process::Command::new("yara")
             .args([
                 "--recursive",
                 "--no-warnings",
-                &self.rules_path.to_string_lossy(),
-                &path.to_string_lossy(),
+                rules_arg.as_str(),
+                path_arg.as_str(),
             ])
             .output()
             .ok()?;

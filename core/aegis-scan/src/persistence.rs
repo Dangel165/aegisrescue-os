@@ -69,8 +69,9 @@ fn parse_hive_autorun(hive_path: &Path) -> Option<Vec<PersistenceItem>> {
     let mut items = vec![];
 
     for key in &autorun_keys {
+        let hive_arg = hive_path.to_string_lossy().into_owned();
         let output = std::process::Command::new("hivexget")
-            .args([&hive_path.to_string_lossy().as_ref(), key])
+            .args([hive_arg.as_str(), key])
             .output()
             .ok()?;
 

@@ -76,8 +76,13 @@ fn mount_vss_snapshots(svi_path: &Path, mount_base: &Path) -> anyhow::Result<()>
     std::fs::create_dir_all(mount_base)?;
 
     // vsshadow -p (libvshadow 기반) 도구 사용
+    let svi_parent_arg = svi_path
+        .parent()
+        .unwrap_or(svi_path)
+        .to_string_lossy()
+        .into_owned();
     let output = std::process::Command::new("vsshadow")
-        .args(["-p", &svi_path.parent().unwrap_or(svi_path).to_string_lossy()])
+        .args(["-p", svi_parent_arg.as_str()])
         .output();
 
     match output {

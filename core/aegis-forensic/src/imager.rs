@@ -61,10 +61,12 @@ pub async fn capture_evidence(source: &Path, output_dir: &Path) -> anyhow::Resul
 }
 
 async fn capture_with_dc3dd(source: &Path, dest: &Path) -> anyhow::Result<()> {
+    let input = format!("if={}", source.display());
+    let output = format!("of={}", dest.display());
     let status = tokio::process::Command::new("dc3dd")
         .args([
-            &format!("if={}", source.display()),
-            &format!("of={}", dest.display()),
+            input.as_str(),
+            output.as_str(),
             "hof=sha256",
             "bs=512k",
         ])
@@ -79,10 +81,12 @@ async fn capture_with_dc3dd(source: &Path, dest: &Path) -> anyhow::Result<()> {
 }
 
 fn capture_with_dd(source: &Path, dest: &Path) -> anyhow::Result<()> {
+    let input = format!("if={}", source.display());
+    let output = format!("of={}", dest.display());
     let status = std::process::Command::new("dd")
         .args([
-            &format!("if={}", source.display()),
-            &format!("of={}", dest.display()),
+            input.as_str(),
+            output.as_str(),
             "bs=512k",
             "conv=noerror,sync",
             "status=progress",
@@ -97,13 +101,22 @@ fn capture_with_dd(source: &Path, dest: &Path) -> anyhow::Result<()> {
 }
 
 fn capture_directory(source: &Path, dest: &Path) -> anyhow::Result<()> {
+    let archive = dest.with_extension("tar.gz");
+    let archive_arg = archive.to_string_lossy().into_owned();
+    let parent_arg = source.parent().unwrap_or(source).to_string_lossy().into_owned();
+    let name_arg = source
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+
     let status = std::process::Command::new("tar")
         .args([
             "-czf",
-            &dest.with_extension("tar.gz").to_string_lossy(),
+            archive_arg.as_str(),
             "-C",
-            &source.parent().unwrap_or(source).to_string_lossy(),
-            &source.file_name().unwrap_or_default().to_string_lossy().as_ref(),
+            parent_arg.as_str(),
+            name_arg.as_str(),
         ])
         .status()?;
 

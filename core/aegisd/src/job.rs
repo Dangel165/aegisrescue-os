@@ -31,40 +31,43 @@ pub async fn execute(mut job: AegisJob) -> AegisJob {
 async fn dispatch(job_type: &JobType) -> anyhow::Result<()> {
     match job_type {
         JobType::QuickScan { target } => {
-            run_tool("aegis-scan", &["--quick", &target.to_string_lossy()]).await
+            run_tool("aegis-scan", &["--quick".into(), target.display().to_string()]).await
         }
         JobType::FullScan { target } => {
-            run_tool("aegis-scan", &["--full", &target.to_string_lossy()]).await
+            run_tool("aegis-scan", &["--full".into(), target.display().to_string()]).await
         }
         JobType::RansomwareRecovery { target } => {
-            run_tool("aegis-recover", &[&target.to_string_lossy()]).await
+            run_tool("aegis-recover", &[target.display().to_string()]).await
         }
         JobType::BootRepair { device } => {
-            run_tool("aegis-boot", &["repair", &device.to_string_lossy()]).await
+            run_tool("aegis-boot", &["repair".into(), device.display().to_string()]).await
         }
         JobType::DiskImage { source, dest } => {
             run_tool("aegis-image", &[
-                &source.to_string_lossy(), &dest.to_string_lossy()
+                source.display().to_string(),
+                dest.display().to_string(),
             ]).await
         }
         JobType::ForensicCapture { target } => {
-            run_tool("aegis-forensic", &["capture", &target.to_string_lossy()]).await
+            run_tool("aegis-forensic", &["capture".into(), target.display().to_string()]).await
         }
         JobType::Backup { source, dest } => {
             run_tool("aegis-image", &[
-                "backup", &source.to_string_lossy(), &dest.to_string_lossy()
+                "backup".into(),
+                source.display().to_string(),
+                dest.display().to_string(),
             ]).await
         }
         JobType::MountDisk { device } => {
-            run_tool("aegis-mount", &["mount", &device.to_string_lossy()]).await
+            run_tool("aegis-mount", &["mount".into(), device.display().to_string()]).await
         }
         JobType::SandboxAnalysis { sample } => {
-            run_tool("aegis-sandbox", &["run", &sample.to_string_lossy()]).await
+            run_tool("aegis-sandbox", &["run".into(), sample.display().to_string()]).await
         }
     }
 }
 
-async fn run_tool(tool: &str, args: &[&str]) -> anyhow::Result<()> {
+async fn run_tool(tool: &str, args: &[String]) -> anyhow::Result<()> {
     let status = tokio::process::Command::new(tool)
         .args(args)
         .status()

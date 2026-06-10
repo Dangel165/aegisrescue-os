@@ -68,8 +68,9 @@ pub fn detect_filesystem(device: &Path) -> Option<FilesystemType> {
 }
 
 fn detect_via_blkid(device: &Path) -> Option<FilesystemType> {
+    let device_arg = device.to_string_lossy().into_owned();
     let output = std::process::Command::new("blkid")
-        .args(["-o", "value", "-s", "TYPE", &device.to_string_lossy()])
+        .args(["-o", "value", "-s", "TYPE", device_arg.as_str()])
         .output()
         .ok()?;
 

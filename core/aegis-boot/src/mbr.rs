@@ -100,10 +100,12 @@ fn analyze_mbr_partitions(mbr: &[u8]) -> String {
 pub fn repair_mbr(device: &Path) -> anyhow::Result<()> {
     tracing::info!(device = %device.display(), "rewriting MBR boot code");
 
+    let device_arg = device.to_string_lossy().into_owned();
+
     // ms-sys 또는 grub-install로 MBR 재작성
     // 1) syslinux/ms-sys로 표준 MBR 코드 기록
     let status = std::process::Command::new("ms-sys")
-        .args(["-w", &device.to_string_lossy()])
+        .args(["-w", device_arg.as_str()])
         .status();
 
     match status {
@@ -137,10 +139,11 @@ pub fn repair_mbr(device: &Path) -> anyhow::Result<()> {
 
 pub fn repair_gpt(device: &Path) -> anyhow::Result<()> {
     tracing::info!(device = %device.display(), "repairing GPT");
+    let device_arg = device.to_string_lossy().into_owned();
 
     // gdisk -l 로 확인 후 백업 GPT에서 복원
     let status = std::process::Command::new("gdisk")
-        .args([&device.to_string_lossy()])
+        .args([device_arg.as_str()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn();
@@ -158,7 +161,7 @@ pub fn repair_gpt(device: &Path) -> anyhow::Result<()> {
         Err(_) => {
             // sgdisk 사용
             let _ = std::process::Command::new("sgdisk")
-                .args(["--recover", &device.to_string_lossy()])
+                .args(["--recover", device_arg.as_str()])
                 .status();
         }
     }

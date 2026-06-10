@@ -85,10 +85,12 @@ impl FileCarver {
 
     async fn run_photorec(&self, device: &Path, output: &Path) -> anyhow::Result<CarvingStats> {
         // photorec CLI: non-interactive mode
+        let output_arg = output.to_string_lossy().into_owned();
+        let device_arg = device.to_string_lossy().into_owned();
         let status = tokio::process::Command::new("photorec")
             .args([
-                "/d", &output.to_string_lossy(),
-                "/cmd", &device.to_string_lossy(),
+                "/d", output_arg.as_str(),
+                "/cmd", device_arg.as_str(),
                 "fileopt,enable,everything,freespace,search",
             ])
             .status()
