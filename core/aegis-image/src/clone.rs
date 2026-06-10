@@ -1,7 +1,6 @@
 //! 디스크 이미징 및 파일 백업
 
 use std::path::{Path, PathBuf};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub struct BackupStats {
     pub files: u64,
@@ -161,10 +160,18 @@ async fn backup_with_restic(
         .output()
         .await?;
 
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("restic backup failed"));
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     tracing::info!("restic: {}", stdout.trim());
 
-    Ok(BackupStats { files: 0, bytes: 0 }) // 실제 파싱 필요
+    let bytes = directory_size(source).unwrap_or(0);
+    Ok(BackupStats {
+        files: if incremental { 0 } else { count_files(source) },
+        bytes,
+    })
 }
 
 async fn backup_with_borg(
@@ -189,7 +196,14 @@ async fn backup_with_borg(
         .status()
         .await?;
 
-    Ok(BackupStats { files: 0, bytes: 0 })
+    if !status.success() {
+        return Err(anyhow::anyhow!("borg backup failed"));
+    }
+
+    Ok(BackupStats {
+        files: count_files(source),
+        bytes: directory_size(source).unwrap_or(0),
+    })
 }
 
 async fn backup_with_tar(source: &Path, dest: &Path) -> anyhow::Result<BackupStats> {
@@ -205,8 +219,15 @@ async fn backup_with_tar(source: &Path, dest: &Path) -> anyhow::Result<BackupSta
         .status()
         .await?;
 
+    if !status.success() {
+        return Err(anyhow::anyhow!("tar backup failed"));
+    }
+
     let size = tokio::fs::metadata(&archive).await?.len();
-    Ok(BackupStats { files: 1, bytes: size })
+    Ok(BackupStats {
+        files: count_files(source),
+        bytes: size,
+    })
 }
 
 fn detect_fs_type(device: &Path) -> Option<String> {
@@ -225,4 +246,27 @@ fn is_tool_available(tool: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+fn count_files(path: &Path) -> u64 {
+    if path.is_file() {
+        return 1;
+    }
+    walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .count() as u64
+}
+
+fn directory_size(path: &Path) -> anyhow::Result<u64> {
+    if path.is_file() {
+        return Ok(std::fs::metadata(path)?.len());
+    }
+    Ok(walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok().map(|m| m.len()))
+        .sum())
 }

@@ -86,6 +86,10 @@ async fn fallback_dd(source: &Path, dest: &Path) -> anyhow::Result<DdrescueStats
         .status()
         .await?;
 
+    if !status.success() {
+        return Err(anyhow::anyhow!("dd fallback failed"));
+    }
+
     Ok(DdrescueStats {
         rescued_sectors: size / 512,
         error_sectors: 0,

@@ -1,11 +1,12 @@
-//! 스캔 오케스트레이터 — 멀티엔진 병렬 스캔 + 스코어 융합
+//! 스캔 오케스트레이터 — 멀티엔진 스캔 + 스코어 융합
 
-use crate::engines::{Engine, EngineResult};
 use crate::engines::heuristic::HeuristicEngine;
 use crate::engines::ioc::IocEngine;
 use crate::engines::signature::SignatureEngine;
 use crate::engines::yara::YaraEngine;
-use crate::persistence::PersistenceChecker;
+use crate::pe_analyzer;
+use crate::persistence::{PersistenceChecker, PersistenceItem};
+use crate::quarantine_client;
 use aegis_common::types::{
     DetectionEngine, DetectionResult, MalwareType, ThreatInfo, ThreatVerdict,
 };
@@ -13,7 +14,6 @@ use chrono::Utc;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -64,6 +64,7 @@ impl Scanner {
         let scan_id = Uuid::new_v4();
 
         info!(scan_id = %scan_id, target = %self.config.target.display(), "scan started");
+        configure_threads(self.config.threads);
 
         // 엔진 초기화
         let sig_engine = SignatureEngine::new(&self.config.signatures_path);
@@ -95,6 +96,13 @@ impl Scanner {
             match self.scan_file(path, &sig_engine, &heur_engine, &yara_engine, &ioc_engine).await {
                 Ok(Some(threat)) => {
                     pb.println(format!("⚠ THREAT: {} [{:?}]", path.display(), threat.verdict));
+                    if self.config.auto_quarantine
+                        && matches!(threat.verdict, ThreatVerdict::Malicious | ThreatVerdict::Suspicious)
+                    {
+                        if let Err(e) = quarantine_client::request_quarantine(&threat.path) {
+                            warn!(path = %threat.path.display(), error = %e, "quarantine request failed");
+                        }
+                    }
                     threats.push(threat);
                     scanned += 1;
                 }
@@ -115,7 +123,17 @@ impl Scanner {
             let persistence_findings = PersistenceChecker::check(&self.config.target);
             if !persistence_findings.is_empty() {
                 info!(count = persistence_findings.len(), "persistence mechanisms found");
-                // 영속성 항목을 위협 목록에 추가 (낮은 severity)
+                for finding in persistence_findings {
+                    let threat = persistence_to_threat(&finding);
+                    if self.config.auto_quarantine
+                        && threat.verdict == ThreatVerdict::Malicious
+                    {
+                        if let Err(e) = quarantine_client::request_quarantine(&threat.path) {
+                            warn!(path = %threat.path.display(), error = %e, "persistence quarantine request failed");
+                        }
+                    }
+                    threats.push(threat);
+                }
             }
         }
 
@@ -133,7 +151,7 @@ impl Scanner {
             scanned_files: scanned,
             malicious_count,
             suspicious_count,
-            clean_count: scanned - malicious_count - suspicious_count,
+            clean_count: scanned.saturating_sub(malicious_count + suspicious_count),
             skipped_count: skipped,
             threats,
         };
@@ -174,6 +192,7 @@ impl Scanner {
         if let Some(r) = heur.scan(path, &data)  { detections.push(r); }
         if let Some(r) = yara.scan(path, &data)  { detections.push(r); }
         if let Some(r) = ioc.check(&hash)         { detections.push(r); }
+        if let Some(r) = analyze_binary(path)     { detections.push(r); }
 
         if detections.is_empty() {
             return Ok(None);
@@ -239,6 +258,93 @@ impl Scanner {
             }
             ScanMode::Full => true,
         }
+    }
+}
+
+fn configure_threads(threads: usize) {
+    if threads > 0 {
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global();
+        info!(threads = threads, "scanner thread pool configured");
+    }
+}
+
+fn analyze_binary(path: &Path) -> Option<DetectionResult> {
+    let info = pe_analyzer::analyze(path)?;
+
+    let suspicious_imports = info.imports.iter().filter(|name| {
+        let lower = name.to_ascii_lowercase();
+        lower.contains("crypt")
+            || lower.contains("virtualalloc")
+            || lower.contains("writeprocessmemory")
+            || lower.contains("createremotethread")
+            || lower.contains("internet")
+            || lower.contains("socket")
+    }).count();
+
+    let suspicious_strings = info.strings.iter().filter(|s| {
+        let lower = s.to_ascii_lowercase();
+        lower.contains("vssadmin")
+            || lower.contains("shadowcopy")
+            || lower.contains("bitcoin")
+            || lower.contains("ransom")
+            || lower.contains("powershell")
+            || lower.contains("cmd.exe")
+    }).count();
+
+    let confidence = ((if info.is_packed { 0.35 } else { 0.0 })
+        + (suspicious_imports as f64 * 0.08)
+        + (suspicious_strings as f64 * 0.08)
+        + if info.entropy > 7.4 { 0.25 } else { 0.0 })
+        .min(0.85);
+
+    if confidence < 0.35 {
+        return None;
+    }
+
+    Some(DetectionResult {
+        engine: DetectionEngine::Heuristic,
+        signature: Some(format!("Static {:?} analysis", info.format)),
+        confidence,
+        details: Some(format!(
+            "arch={}, packed={}, entropy={:.2}, imports={}, exports={}, suspicious_imports={}, suspicious_strings={}",
+            info.architecture,
+            info.is_packed,
+            info.entropy,
+            info.imports.len(),
+            info.exports.len(),
+            suspicious_imports,
+            suspicious_strings,
+        )),
+    })
+}
+
+fn persistence_to_threat(item: &PersistenceItem) -> ThreatInfo {
+    let risk_score = match item.severity {
+        "CRITICAL" => 0.95,
+        "HIGH" => 0.85,
+        "MEDIUM" => 0.60,
+        _ => 0.40,
+    };
+    let verdict = score_to_verdict(risk_score);
+
+    ThreatInfo {
+        id: Uuid::new_v4(),
+        path: PathBuf::from(&item.location),
+        verdict,
+        risk_score,
+        malware_family: Some(format!("{} persistence", item.os)),
+        malware_type: Some(MalwareType::PotentiallyUnwanted),
+        detections: vec![DetectionResult {
+            engine: DetectionEngine::Behavioral,
+            signature: Some(item.mechanism.clone()),
+            confidence: risk_score,
+            details: Some(format!("{} persistence: {}", item.severity, item.entry)),
+        }],
+        hash_sha256: String::new(),
+        size_bytes: 0,
+        detected_at: Utc::now(),
     }
 }
 

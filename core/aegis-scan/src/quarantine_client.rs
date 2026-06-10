@@ -1,12 +1,24 @@
 //! aegisd 격리 요청 클라이언트
 
-use aegis_common::ipc::{DaemonRequest, DaemonResponse, AEGIS_SOCKET_PATH};
 use std::path::Path;
 
-pub fn request_quarantine(_path: &Path) -> anyhow::Result<()> {
-    // aegisd IPC 소켓으로 격리 요청 전송
-    // 실제 구현: Unix 소켓 연결 + JSON 직렬화
-    // 현재는 직접 격리 실행
-    tracing::info!("Quarantine request (aegisd IPC not connected, direct mode)");
+pub fn request_quarantine(path: &Path) -> anyhow::Result<()> {
+    // The scanner may run in an offline/live context before aegisd is ready.
+    // Leave a durable marker next to the target so aegisd/GUI can pick it up
+    // later without mutating suspicious evidence immediately.
+    let marker = path.with_extension("aegis-quarantine-request");
+    std::fs::write(
+        &marker,
+        format!(
+            "path={}\nrequested_at={}\n",
+            path.display(),
+            chrono::Utc::now().to_rfc3339()
+        ),
+    )?;
+    tracing::info!(
+        path = %path.display(),
+        marker = %marker.display(),
+        "quarantine request recorded"
+    );
     Ok(())
 }

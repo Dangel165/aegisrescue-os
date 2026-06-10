@@ -22,4 +22,5 @@ clap         = { workspace = true }
 chrono       = { workspace = true }
 uuid         = { workspace = true }
 indicatif    = { workspace = true }
+walkdir      = { workspace = true }
 zstd         = { workspace = true }

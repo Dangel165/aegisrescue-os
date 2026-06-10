@@ -98,9 +98,34 @@ fn check_windows_services(root: &Path) -> Vec<PersistenceItem> {
     let services_path = root.join("Windows/System32/config/SYSTEM");
     if !services_path.exists() { return vec![]; }
 
-    // SYSTEM 하이브의 Services 키 파싱
-    // 실제 구현에서는 nt-hive-parser 사용
-    vec![]
+    let services_key = "ControlSet001\\Services";
+    let hive_arg = services_path.to_string_lossy().into_owned();
+    let output = match std::process::Command::new("hivexget")
+        .args([hive_arg.as_str(), services_key])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return vec![],
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.lines()
+        .filter(|line| {
+            let lower = line.to_ascii_lowercase();
+            lower.contains("imagepath")
+                && (lower.contains("\\temp\\")
+                    || lower.contains("\\appdata\\")
+                    || lower.contains("powershell")
+                    || lower.contains("cmd.exe"))
+        })
+        .map(|line| PersistenceItem {
+            os: "Windows",
+            mechanism: "Service ImagePath".into(),
+            location: format!("HKLM\\SYSTEM\\{}", services_key),
+            entry: line.to_string(),
+            severity: "HIGH",
+        })
+        .collect()
 }
 
 fn check_windows_scheduled_tasks(root: &Path) -> Vec<PersistenceItem> {
@@ -138,23 +163,39 @@ fn check_windows_startup_folder(root: &Path) -> Vec<PersistenceItem> {
     let mut items = vec![];
 
     for path_pattern in &startup_paths {
-        let full = root.join(path_pattern);
-        if full.exists() {
-            if let Ok(entries) = std::fs::read_dir(&full) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    items.push(PersistenceItem {
-                        os: "Windows",
-                        mechanism: "Startup Folder".into(),
-                        location: full.to_string_lossy().to_string(),
-                        entry: entry.file_name().to_string_lossy().to_string(),
-                        severity: "MEDIUM",
-                    });
+        if path_pattern.contains('*') {
+            let users_dir = root.join("Users");
+            if let Ok(users) = std::fs::read_dir(users_dir) {
+                for user in users.filter_map(|e| e.ok()) {
+                    let full = user.path().join("AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup");
+                    collect_startup_entries(&full, &mut items);
                 }
             }
+        } else {
+            let full = root.join(path_pattern);
+            collect_startup_entries(&full, &mut items);
         }
     }
 
     items
+}
+
+fn collect_startup_entries(full: &Path, items: &mut Vec<PersistenceItem>) {
+    if !full.exists() {
+        return;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(full) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            items.push(PersistenceItem {
+                os: "Windows",
+                mechanism: "Startup Folder".into(),
+                location: full.to_string_lossy().to_string(),
+                entry: entry.file_name().to_string_lossy().to_string(),
+                severity: "MEDIUM",
+            });
+        }
+    }
 }
 
 fn check_linux_systemd(root: &Path) -> Vec<PersistenceItem> {

@@ -29,7 +29,24 @@ pub fn analyze(path: &Path) -> Option<BinaryInfo> {
     match Object::parse(&data).ok()? {
         Object::PE(pe) => Some(analyze_pe(&pe, &data, entropy)),
         Object::Elf(elf) => Some(analyze_elf(&elf, &data, entropy)),
-        _ => None,
+        Object::Mach(_) => Some(BinaryInfo {
+            format: BinaryFormat::MachO,
+            architecture: "mach-o".into(),
+            is_packed: entropy > 7.4,
+            imports: vec![],
+            exports: vec![],
+            strings: extract_strings(&data),
+            entropy,
+        }),
+        _ => Some(BinaryInfo {
+            format: BinaryFormat::Unknown,
+            architecture: "unknown".into(),
+            is_packed: entropy > 7.6,
+            imports: vec![],
+            exports: vec![],
+            strings: extract_strings(&data),
+            entropy,
+        }),
     }
 }
 

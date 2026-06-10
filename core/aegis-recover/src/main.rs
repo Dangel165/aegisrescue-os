@@ -89,7 +89,12 @@ async fn main() -> anyhow::Result<()> {
             let fam = family::identify_ransomware(&target);
             let decryptor = decryptor::Decryptor::new(fam.as_ref(), key.as_deref());
             let stats = decryptor.run(&target, &output).await?;
-            println!("Recovery complete: {}/{} files recovered", stats.recovered, stats.total);
+            println!(
+                "Recovery complete: {}/{} files recovered ({} failed)",
+                stats.recovered,
+                stats.total,
+                stats.failed
+            );
         }
 
         Commands::Vss { target, output } => {
@@ -120,7 +125,12 @@ async fn main() -> anyhow::Result<()> {
             println!("[2/4] Trying known decryptors...");
             let dec = decryptor::Decryptor::new(fam.as_ref(), None);
             let dec_stats = dec.run(&target, &output).await?;
-            println!("  Recovered: {}/{}", dec_stats.recovered, dec_stats.total);
+            println!(
+                "  Recovered: {}/{} ({} failed)",
+                dec_stats.recovered,
+                dec_stats.total,
+                dec_stats.failed
+            );
 
             // 3단계: VSS 복원
             println!("[3/4] Attempting VSS/snapshot recovery...");

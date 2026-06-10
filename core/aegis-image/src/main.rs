@@ -1,7 +1,6 @@
 //! aegis-image — 디스크 이미징 및 백업
 
 mod clone;
-mod compress;
 mod ddrescue;
 mod restore;
 mod verify;
