@@ -1,6 +1,7 @@
 {
   "name": "aegiscenter",
   "version": "0.1.0",
+  "type": "module",
   "description": "AegisRescue GUI — Malware Recovery Control Center",
   "scripts": {
     "dev": "vite",
