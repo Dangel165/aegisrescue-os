@@ -682,28 +682,69 @@ find_tauri_binary() {
     found=$(find "${project_dir}/src-tauri/target/release" -type f -name "${bin}" 2>/dev/null | head -1)
     [[ -n "${found}" ]] && { echo "${found}"; return 0; }
 
-    found=$(find "${project_dir}/src-tauri/target/release/bundle" -type f -name "${bin}" 2>/dev/null | head -1)
+    found=$(find "${project_dir}/src-tauri/target/release/bundle" -type f \( \
+        -name "${bin}" -o -path "*/usr/bin/${bin}" -o -path "*/data/usr/bin/${bin}" \
+        \) 2>/dev/null | head -1)
     [[ -n "${found}" ]] && { echo "${found}"; return 0; }
+    return 1
+}
+
+extract_tauri_binary_from_deb() {
+    local project_dir="$1"
+    local bin="$2"
+    local dest="$3"
+    local deb tmp found
+
+    deb=$(find "${project_dir}/src-tauri/target/release/bundle/deb" -name "*.deb" -type f 2>/dev/null | sort | tail -1)
+    [[ -n "${deb}" ]] || return 1
+
+    command -v dpkg-deb &>/dev/null || \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends dpkg-dev >/dev/null 2>&1 || true
+    command -v dpkg-deb &>/dev/null || return 1
+
+    tmp=$(mktemp -d)
+    if ! dpkg-deb -x "${deb}" "${tmp}" 2>/dev/null; then
+        rm -rf "${tmp}"
+        return 1
+    fi
+
+    found=$(find "${tmp}" -type f -name "${bin}" 2>/dev/null | head -1)
+    [[ -z "${found}" ]] && found=$(find "${tmp}/usr/bin" -type f 2>/dev/null | head -1)
+
+    if [[ -n "${found}" ]]; then
+        cp "${found}" "${dest}"
+        chmod +x "${dest}" 2>/dev/null || true
+        rm -rf "${tmp}"
+        echo "${deb}"
+        return 0
+    fi
+
+    rm -rf "${tmp}"
     return 1
 }
 
 copy_tauri_binary() {
     local project="$1"
     local bin="$2"
-    local src
+    local src deb_src
 
     mkdir -p "${TOOLS_DIR}"
-    if ! src=$(find_tauri_binary "${WSL_HOME}/${project}" "${bin}"); then
-        warn "  ${bin} — 빌드 산출물 없음 (target/release 또는 bundle 확인)"
-        find "${WSL_HOME}/${project}/src-tauri/target" -type f \( -name "${bin}" -o -name "*.AppImage" -o -name "*.deb" \) 2>/dev/null | \
-            head -10 >> "${OUT_DIR}/gui-build.log" || true
-        return 1
+    if src=$(find_tauri_binary "${WSL_HOME}/${project}" "${bin}"); then
+        cp "${src}" "${TOOLS_DIR}/${bin}"
+        chmod +x "${TOOLS_DIR}/${bin}" 2>/dev/null || true
+        ok "  ${bin} 빌드 완료 ($(du -sh "${TOOLS_DIR}/${bin}" | cut -f1)) ← ${src#${WSL_HOME}/}"
+        return 0
     fi
 
-    cp "${src}" "${TOOLS_DIR}/${bin}"
-    chmod +x "${TOOLS_DIR}/${bin}" 2>/dev/null || true
-    ok "  ${bin} 빌드 완료 ($(du -sh "${TOOLS_DIR}/${bin}" | cut -f1)) ← ${src#${WSL_HOME}/}"
-    return 0
+    if deb_src=$(extract_tauri_binary_from_deb "${WSL_HOME}/${project}" "${bin}" "${TOOLS_DIR}/${bin}"); then
+        ok "  ${bin} 빌드 완료 ($(du -sh "${TOOLS_DIR}/${bin}" | cut -f1)) ← deb:${deb_src#${WSL_HOME}/}"
+        return 0
+    fi
+
+    warn "  ${bin} — 빌드 산출물 없음 (target/release·bundle·deb 확인)"
+    find "${WSL_HOME}/${project}/src-tauri/target" -type f \( -name "${bin}" -o -name "*.AppImage" -o -name "*.deb" \) 2>/dev/null | \
+        head -10 >> "${OUT_DIR}/gui-build.log" || true
+    return 1
 }
 
 # ─── GUI 빌드 ────────────────────────────────────────────────────
