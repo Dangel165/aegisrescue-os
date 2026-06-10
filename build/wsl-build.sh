@@ -463,33 +463,72 @@ ensure_cargo() {
     command -v cargo >/dev/null 2>&1
 }
 
+tauri_pkg_config_path() {
+    local paths=()
+    local dir
+    for dir in \
+        /usr/lib/x86_64-linux-gnu/pkgconfig \
+        /usr/lib/pkgconfig \
+        /usr/share/pkgconfig \
+        /usr/local/lib/pkgconfig; do
+        [[ -d "${dir}" ]] && paths+=("${dir}")
+    done
+    if ((${#paths[@]} == 0)); then
+        echo ""
+        return 0
+    fi
+    local IFS=:
+    echo "${paths[*]}"
+}
+
+tauri_export_pkg_config() {
+    local pc_path
+    pc_path="$(tauri_pkg_config_path)"
+    [[ -n "${pc_path}" ]] && export PKG_CONFIG_PATH="${pc_path}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+    export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
+    export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
+}
+
 tauri_webkit4_ready() {
+    tauri_export_pkg_config
     pkg-config --exists javascriptcoregtk-4.0 2>/dev/null && \
         pkg-config --exists webkit2gtk-4.0 2>/dev/null
 }
 
 tauri_link_webkit41_as_40() {
-    local pc_dir
+    local pc_dir src dst
     for pc_dir in /usr/lib/x86_64-linux-gnu/pkgconfig /usr/lib/pkgconfig; do
         [[ -d "${pc_dir}" ]] || continue
         for pair in \
             "javascriptcoregtk-4.1.pc:javascriptcoregtk-4.0.pc" \
             "webkit2gtk-4.1.pc:webkit2gtk-4.0.pc" \
             "webkit2gtk-web-extension-4.1.pc:webkit2gtk-web-extension-4.0.pc"; do
-            local src="${pair%%:*}" dst="${pair##*:}"
-            [[ -f "${pc_dir}/${src}" ]] || continue
-            [[ -e "${pc_dir}/${dst}" ]] && continue
-            ln -sf "${src}" "${pc_dir}/${dst}"
+            src="${pc_dir}/${pair%%:*}"
+            dst="${pc_dir}/${pair##*:}"
+            [[ -f "${src}" ]] || continue
+            ln -sf "$(basename "${src}")" "${dst}"
+            log "  pkg-config: ${dst} -> $(basename "${src}")"
         done
     done
 }
 
+tauri_log_webkit_status() {
+    local log_file="${1:-}"
+    {
+        echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-<unset>}"
+        pkg-config --modversion javascriptcoregtk-4.0 2>&1 || true
+        pkg-config --modversion webkit2gtk-4.0 2>&1 || true
+        ls -la /usr/lib/x86_64-linux-gnu/pkgconfig/javascriptcoregtk*.pc 2>&1 || true
+        ls -la /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk*.pc 2>&1 || true
+    } >> "${log_file}" 2>&1
+}
+
 ensure_tauri_deps() {
     apt-get update -qq 2>/dev/null || true
-    apt-get install -y --no-install-recommends \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
         libssl-dev patchelf pkg-config libsoup2.4-dev \
-        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -5 || true
+        >/dev/null 2>&1 || true
 
     if tauri_webkit4_ready; then
         ok "WebKitGTK 4.0 (Tauri v1) 준비됨"
@@ -500,21 +539,22 @@ ensure_tauri_deps() {
 
     # Ubuntu 22.04 / Debian 12: 네이티브 4.0 패키지
     if apt-cache show libwebkit2gtk-4.0-dev &>/dev/null; then
-        if apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev \
-            2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3; then
-            tauri_webkit4_ready && { ok "libwebkit2gtk-4.0-dev 설치됨"; return 0; }
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.0-dev >/dev/null 2>&1 || true
+        if tauri_webkit4_ready; then
+            ok "libwebkit2gtk-4.0-dev 설치됨"
+            return 0
         fi
     fi
 
-    # Ubuntu 24.04+: 4.1만 제공 → pkg-config 4.0 별칭 (Tauri v1 공식 우회)
-    if apt-get install -y --no-install-recommends \
+    # Ubuntu 24.04+: 4.1만 제공 → pkg-config 4.0 별칭 (Tauri v1 우회)
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3; then
-        tauri_link_webkit41_as_40
-        if tauri_webkit4_ready; then
-            ok "WebKitGTK 4.1 + 4.0 pkg-config 별칭 (Ubuntu 24+)"
-            return 0
-        fi
+        >/dev/null 2>&1 || true
+    tauri_link_webkit41_as_40
+    if tauri_webkit4_ready; then
+        ok "WebKitGTK 4.1 + 4.0 pkg-config 별칭 (Ubuntu 24+)"
+        return 0
     fi
 
     # 최후 수단: Jammy 저장소에서 4.0 설치 (핀 고정으로 시스템 패키지 보호)
@@ -532,16 +572,17 @@ Pin: release n=jammy
 Pin-Priority: 100
 EOF
     apt-get update -qq 2>/dev/null || true
-    if apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev \
-        2>/dev/null | grep -E "^(Setting up|Unpacking)" | tail -3; then
-        rm -f "${jammy_list}" "${jammy_pin}"
-        apt-get update -qq 2>/dev/null || true
-        tauri_webkit4_ready && { ok "Jammy WebKitGTK 4.0 설치됨"; return 0; }
-    fi
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libwebkit2gtk-4.0-dev >/dev/null 2>&1 || true
     rm -f "${jammy_list}" "${jammy_pin}"
     apt-get update -qq 2>/dev/null || true
+    if tauri_webkit4_ready; then
+        ok "Jammy WebKitGTK 4.0 설치됨"
+        return 0
+    fi
 
     warn "javascriptcoregtk-4.0 / webkit2gtk-4.0 를 찾을 수 없습니다"
+    warn "수동 확인: pkg-config --exists javascriptcoregtk-4.0"
     warn "수동 설치: sudo bash build/wsl-build.sh --setup"
     return 1
 }
@@ -604,8 +645,16 @@ build_gui_wsl() {
             continue
         fi
 
+        if ! tauri_webkit4_ready; then
+            ensure_tauri_deps >> "${OUT_DIR}/gui-build.log" 2>&1 || true
+        fi
+        tauri_export_pkg_config
+        tauri_log_webkit_status "${OUT_DIR}/gui-build.log"
+
         # 프로젝트 로컬 @tauri-apps/cli 사용 (cargo tauri 전역 설치 불필요)
-        if DISPLAY="" npx tauri build >> "${OUT_DIR}/gui-build.log" 2>&1; then
+        if DISPLAY="" env PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}" \
+            PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1 PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 \
+            npx tauri build >> "${OUT_DIR}/gui-build.log" 2>&1; then
             :
         else
             warn "${project} 빌드 실패 (건너뜀)"
