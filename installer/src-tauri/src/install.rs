@@ -340,6 +340,10 @@ impl Installer {
         let mount_root = "/mnt/aegis_install";
         let dev = &self.config.target_device;
 
+        if self.config.security.enable_secure_boot {
+            tracing::info!("Secure Boot requested — signed EFI payloads will be used when available");
+        }
+
         if Path::new("/sys/firmware/efi").exists() {
             // UEFI: GRUB EFI
             let esp = format!("{}/boot/efi", mount_root);
@@ -351,12 +355,18 @@ impl Installer {
                 .args([&efi_part, &esp])
                 .status().await;
 
+            let mut grub_args = vec![
+                "grub-install",
+                "--target=x86_64-efi",
+                "--efi-directory=/boot/efi",
+                "--bootloader-id=AegisRescue",
+                "--recheck",
+            ];
+            if self.config.security.enable_secure_boot {
+                grub_args.push("--uefi-secure-boot");
+            }
             let _ = tokio::process::Command::new("chroot")
-                .args([mount_root, "grub-install",
-                       "--target=x86_64-efi",
-                       "--efi-directory=/boot/efi",
-                       "--bootloader-id=AegisRescue",
-                       "--recheck"])
+                .args(std::iter::once(mount_root).chain(grub_args))
                 .status().await;
         } else {
             // Legacy BIOS: GRUB MBR
@@ -465,10 +475,13 @@ impl Installer {
         std::fs::write(
             format!("{}/.installed", aegis_data),
             format!(
-                "installed_at={}\nversion=0.1.0\nlanguage={}\nhostname={}\n",
+                "installed_at={}\nversion=0.1.0\nlanguage={}\nhostname={}\n\
+                 secure_boot={}\ntpm_enabled={}\n",
                 chrono::Utc::now().to_rfc3339(),
                 self.config.language,
                 self.config.hostname,
+                self.config.security.enable_secure_boot,
+                self.config.security.enable_tpm,
             ),
         )?;
 

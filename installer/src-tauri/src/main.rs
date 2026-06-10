@@ -7,12 +7,16 @@ mod disk;
 mod install;
 mod preflight;
 
+use commands::InstallerState;
+use std::sync::{Arc, Mutex};
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter("info")
         .init();
 
     tauri::Builder::default()
+        .manage(InstallerState(Arc::new(Mutex::new(None))))
         .invoke_handler(tauri::generate_handler![
             // 시스템 점검
             commands::preflight_check,

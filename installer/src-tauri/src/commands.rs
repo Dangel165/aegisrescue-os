@@ -3,12 +3,12 @@
 use crate::disk::{TargetDisk, DiskInfo};
 use crate::install::{InstallConfig, InstallProgress, Installer};
 use crate::preflight::{PreflightResult, run_preflight};
-use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use serde::Serialize;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
 /// 전역 설치 상태 (진행률 공유)
-pub struct InstallerState(pub Mutex<Option<InstallProgress>>);
+pub struct InstallerState(pub Arc<Mutex<Option<InstallProgress>>>);
 
 // ─── 시스템 사전 점검 ────────────────────────────────────────
 
@@ -40,17 +40,28 @@ pub async fn validate_install_config(config: InstallConfig) -> Result<Vec<String
 pub async fn start_installation(
     config: InstallConfig,
     window: tauri::Window,
+    state: State<'_, InstallerState>,
 ) -> Result<(), String> {
     let mut installer = Installer::new(config);
+    let progress_store = state.0.clone();
 
     installer.run(move |progress| {
+        if let Ok(mut slot) = progress_store.lock() {
+            *slot = Some(progress.clone());
+        }
         let _ = window.emit("install-progress", &progress);
     }).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_install_progress() -> Result<Option<InstallProgress>, String> {
-    Ok(None)
+pub async fn get_install_progress(
+    state: State<'_, InstallerState>,
+) -> Result<Option<InstallProgress>, String> {
+    state
+        .0
+        .lock()
+        .map(|guard| guard.clone())
+        .map_err(|e| e.to_string())
 }
 
 // ─── 시스템 정보 ─────────────────────────────────────────────

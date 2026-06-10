@@ -163,24 +163,31 @@ fn detect_partition_table(disk_name: &str) -> String {
 
 fn recommended_partition_layout(total: u64, free: u64) -> Vec<PartitionPlan> {
     let gib = 1024 * 1024 * 1024u64;
+    let efi_size = 512 * 1024 * 1024;
+    let sys_size = 2 * gib;
+    let reserved = efi_size + sys_size;
+    let mut data_size = free.saturating_sub(3 * gib);
+    if reserved + data_size > total {
+        data_size = total.saturating_sub(reserved);
+    }
     vec![
         PartitionPlan {
             label: "EFI System".into(),
-            size_bytes: 512 * 1024 * 1024,
+            size_bytes: efi_size,
             filesystem: "vfat".into(),
             mountpoint: "/boot/efi".into(),
             flags: vec!["esp".into(), "boot".into()],
         },
         PartitionPlan {
             label: "AegisRescue System".into(),
-            size_bytes: 2 * gib,
+            size_bytes: sys_size.min(total.saturating_sub(efi_size)),
             filesystem: "ext4".into(),
             mountpoint: "/".into(),
             flags: vec![],
         },
         PartitionPlan {
             label: "AegisRescue Data".into(),
-            size_bytes: free.saturating_sub(3 * gib),
+            size_bytes: data_size,
             filesystem: "ext4".into(),
             mountpoint: "/var/lib/aegis".into(),
             flags: vec![],
