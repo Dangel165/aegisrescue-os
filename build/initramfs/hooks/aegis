@@ -1,0 +1,27 @@
+#!/bin/sh
+# initramfs-tools 훅 — AegisRescue 모드 초기화
+# /etc/initramfs-tools/hooks/aegis 에 설치
+
+PREREQ=""
+
+prereqs() { echo "$PREREQ"; }
+
+case "$1" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# aegis 커맨드라인 파서 스크립트를 initramfs에 포함
+copy_exec /opt/aegis/bin/aegis-preflight /bin 2>/dev/null || true
+
+# nftables 바이너리
+copy_exec /sbin/nft /sbin 2>/dev/null || true
+copy_exec /sbin/nftables /sbin 2>/dev/null || true
+
+# 커널 모듈 — squashfs, aufs/overlay, crypto
+manual_add_modules squashfs overlay aufs
+manual_add_modules dm-verity dm-integrity
+manual_add_modules aes-x86_64 sha256 sha512
+manual_add_modules ntfs3 exfat vfat
+manual_add_modules loop

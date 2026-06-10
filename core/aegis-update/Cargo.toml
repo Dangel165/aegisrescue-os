@@ -1,0 +1,30 @@
+[package]
+name        = "aegis-update"
+version     = "0.1.0"
+edition     = "2021"
+description = "AegisRescue update system — signature DB, YARA rules, AI model, and OS component updates"
+license     = "GPL-3.0"
+
+[[bin]]
+name = "aegis-update"
+path = "src/main.rs"
+
+[dependencies]
+aegis-common = { path = "../aegis-common" }
+clap         = { version = "4", features = ["derive"] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+toml         = "0.8"
+anyhow       = "1"
+sha2         = "0.10"
+hex          = "0.4"
+tokio        = { version = "1", features = ["full"] }
+reqwest      = { version = "0.11", features = ["json", "stream"], default-features = false,
+                  optional = true }
+tracing      = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono       = { version = "0.4", features = ["serde"] }
+
+[features]
+default  = []
+network  = ["reqwest"]

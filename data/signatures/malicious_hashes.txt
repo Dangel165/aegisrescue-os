@@ -1,0 +1,17 @@
+# AegisRescue 악성 파일 SHA-256 해시 데이터베이스
+# 형식: <sha256_hash> [선택적 설명]
+# 업데이트: 2024-01-01
+#
+# 실제 배포 시 MISP/OpenIOC에서 자동 동기화
+
+# WannaCry
+24d004a104d4d54034dbcffc2a4b19a11f39008a575aa614ea04703480b1022c  WannaCry.A
+ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa  WannaCry.B
+09a46b3e1be080745a6d8d88d6b5bd351b1c7586ae0dc94d0c238ee36421cafa  WannaCry.C
+
+# Petya/NotPetya
+027cc450ef5f8c5f653329641ec1fed91f694e0d229928963b30f6b0d7d3a745  NotPetya
+
+# 테스트용 EICAR 해시 (안전한 테스트 파일)
+# 실제 악성 해시가 아님
+44d88612fea8a8f36de82e1278abb02f  EICAR_test_sha1

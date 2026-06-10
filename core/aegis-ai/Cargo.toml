@@ -1,0 +1,29 @@
+[package]
+name    = "aegis-ai"
+version = "0.1.0"
+edition = "2021"
+description = "AegisRescue AI-based malware classification module (offline inference)"
+license = "GPL-3.0"
+
+[[bin]]
+name = "aegis-ai"
+path = "src/main.rs"
+
+[lib]
+name = "aegis_ai"
+path = "src/lib.rs"
+
+[dependencies]
+aegis-common = { path = "../aegis-common" }
+tokio        = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+anyhow       = { workspace = true }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap         = { workspace = true }
+chrono       = { workspace = true }
+uuid         = { workspace = true }
+goblin       = { workspace = true }
+walkdir      = { workspace = true }

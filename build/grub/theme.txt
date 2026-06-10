@@ -1,0 +1,73 @@
+# AegisRescue GRUB theme - black boot logo edition
+# =====================================================================
+
+title-text: "AegisRescue Linux"
+title-color: "#d8d8d8"
+title-font: "Sans Bold 20"
+
+desktop-color: "#000000"
+desktop-image: "aegis-bg.png"
+
+message-color: "#a6a6a6"
+message-bg-color: "#0a0a0a"
+
+# Menu style
++ boot_menu {
+    left   = 18%
+    top    = 52%
+    width  = 70%
+    height = 34%
+
+    item_font  = "Sans 14"
+    item_color = "#b8b8b8"
+
+    selected_item_font  = "Sans Bold 14"
+    selected_item_color = "#ffffff"
+
+    item_height         = 30
+    item_padding        = 10
+    item_spacing        = 4
+
+    selected_item_pixmap_style = "select_e/*.png"
+    menu_pixmap_style = "menu_e/*.png"
+    scrollbar = true
+    scrollbar_width = 10
+}
+
+# Timeout bar
++ progress_bar {
+    id   = "__timeout__"
+    left = 18%
+    top  = 88%
+    width = 64%
+    height = 8
+
+    fg_color   = "#c8c8c8"
+    bg_color   = "#181818"
+    border_color = "#3a3a3a"
+
+    text         = ""
+    text_color   = "#8c8c8c"
+    text_font    = "Sans 12"
+}
+
+# Bottom hint
++ label {
+    top    = 92%
+    left   = 18%
+    width  = 64%
+    align  = "center"
+    text   = "Up/Down Select   Enter Boot   e Edit   c Console"
+    color  = "#666666"
+    font   = "Sans 11"
+}
+
+# Version label
++ label {
+    top    = 4%
+    left   = 50%
+    align  = "center"
+    text   = "AegisRescue Linux v0.1.0 | Malware Recovery OS"
+    color  = "#7d7d7d"
+    font   = "Sans 12"
+}

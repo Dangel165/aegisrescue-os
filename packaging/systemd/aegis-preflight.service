@@ -1,0 +1,21 @@
+[Unit]
+Description=AegisRescue Pre-flight System Check
+Documentation=https://aegisrescue.io/docs/preflight
+After=local-fs.target
+Before=aegisd.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/aegis/bin/aegis-preflight --json --strict
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aegis-preflight
+RemainAfterExit=yes
+
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

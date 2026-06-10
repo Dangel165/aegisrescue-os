@@ -1,0 +1,22 @@
+[package]
+name        = "aegis-preflight"
+version     = "0.1.0"
+edition     = "2021"
+description = "AegisRescue pre-flight system check — hardware compatibility, security features, tool availability"
+license     = "GPL-3.0"
+
+[[bin]]
+name = "aegis-preflight"
+path = "src/main.rs"
+
+[dependencies]
+aegis-common = { path = "../aegis-common" }
+clap         = { version = "4", features = ["derive"] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+anyhow       = "1"
+tracing      = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

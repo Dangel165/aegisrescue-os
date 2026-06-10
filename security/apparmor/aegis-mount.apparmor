@@ -1,0 +1,41 @@
+# AppArmor 프로파일 — aegis-mount
+
+/usr/bin/aegis-mount {
+    #include <abstractions/base>
+
+    # 마운트 권한 (루트 전용)
+    capability sys_admin,
+    capability dac_read_search,
+    capability linux_immutable,
+
+    # 블록 장치 읽기 (마운트 전 분석)
+    /dev/sd* r,
+    /dev/nvme* r,
+    /dev/vd* r,
+    /dev/mmcblk* r,
+    /dev/loop* r,
+
+    # 마운트 포인트 관리
+    /mnt/targets/ rw,
+    /mnt/targets/** rw,
+
+    # 정책 파일 읽기
+    /etc/aegis/policy.toml r,
+    /etc/aegis/mount-rules.toml r,
+
+    # 로그
+    /var/log/aegis/** w,
+
+    # blkid, mount 유틸
+    /usr/sbin/blkid ix,
+    /usr/bin/mount ix,
+    /usr/bin/umount ix,
+
+    # aegisd 소켓
+    unix (send, receive) type=stream peer=(label=/usr/bin/aegisd),
+
+    /proc/mounts r,
+    /proc/filesystems r,
+    /sys/block/** r,
+    /sys/class/block/** r,
+}

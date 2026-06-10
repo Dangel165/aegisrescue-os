@@ -1,0 +1,41 @@
+# AppArmor 프로파일 — aegis-scan
+# /usr/bin/aegis-scan 전용
+
+/usr/bin/aegis-scan {
+    #include <abstractions/base>
+
+    # 실행 가능 파일 읽기
+    capability dac_read_search,
+    capability sys_ptrace,
+
+    # 스캔 대상 읽기 (마운트된 타겟 읽기전용)
+    /mnt/targets/** r,
+    /mnt/evidence/** r,
+
+    # 시그니처/룰 읽기
+    /usr/share/aegis/** r,
+
+    # 임시 파일 (ClamAV 스캔용)
+    /tmp/aegis_clam_* rw,
+    /tmp/aegis_clam_* w,
+
+    # 로그 쓰기
+    /var/log/aegis/ w,
+    /var/log/aegis/** w,
+
+    # clamdscan 실행
+    /usr/bin/clamdscan ix,
+    /usr/bin/yara ix,
+    /usr/bin/aegis-ai ix,
+
+    # aegisd 소켓 통신
+    unix (send, receive) type=stream peer=(label=/usr/bin/aegisd),
+
+    # 시스템 정보
+    /proc/self/** r,
+    /sys/block/** r,
+
+    # 직접 블록 장치 읽기 금지 (aegis-mount 경유만)
+    deny /dev/sd* rw,
+    deny /dev/nvme* rw,
+}

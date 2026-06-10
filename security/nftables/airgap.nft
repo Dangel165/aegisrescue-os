@@ -1,0 +1,24 @@
+#!/usr/sbin/nft -f
+# AegisRescue Air-Gap nftables 룰 — 완전 차단
+
+flush ruleset
+
+table inet aegis_airgap {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        # 루프백 허용
+        iifname lo accept comment "loopback"
+        # 기존 연결 허용
+        ct state established,related accept
+    }
+
+    chain output {
+        type filter hook output priority 0; policy drop;
+        # 루프백 허용
+        oifname lo accept comment "loopback"
+    }
+
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+}

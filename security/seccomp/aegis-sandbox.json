@@ -1,0 +1,47 @@
+{
+  "defaultAction": "SCMP_ACT_KILL_PROCESS",
+  "archMap": [
+    { "architecture": "SCMP_ARCH_X86_64", "subArchitectures": ["SCMP_ARCH_X86"] },
+    { "architecture": "SCMP_ARCH_AARCH64", "subArchitectures": ["SCMP_ARCH_ARM"] }
+  ],
+  "syscalls": [
+    {
+      "names": [
+        "read", "write", "close", "fstat", "lstat", "poll", "lseek",
+        "mmap", "mprotect", "munmap", "brk",
+        "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+        "access", "pipe", "select", "sched_yield",
+        "madvise", "dup", "dup2", "pause", "nanosleep",
+        "getpid", "getuid", "getgid", "geteuid", "getegid",
+        "exit", "exit_group",
+        "getcwd", "chdir",
+        "readlink", "readlinkat",
+        "getdents64", "getdents",
+        "uname", "getrlimit",
+        "open", "openat", "stat",
+        "arch_prctl", "futex", "set_tid_address", "set_robust_list",
+        "pread64", "pwrite64", "readv", "writev"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "names": ["execve", "execveat"],
+      "action": "SCMP_ACT_LOG"
+    },
+    {
+      "names": [
+        "socket", "connect", "sendto", "recvfrom", "bind", "listen", "accept"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "names": [
+        "ptrace", "process_vm_readv", "process_vm_writev",
+        "kexec_load", "kexec_file_load",
+        "init_module", "finit_module", "delete_module"
+      ],
+      "action": "SCMP_ACT_KILL_PROCESS"
+    }
+  ]
+}

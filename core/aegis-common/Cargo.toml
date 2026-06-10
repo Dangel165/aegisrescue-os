@@ -1,0 +1,19 @@
+[package]
+name    = "aegis-common"
+version = "0.1.0"
+edition = "2021"
+description = "AegisRescue shared types, utilities, and IPC protocol"
+license = "GPL-3.0"
+
+[dependencies]
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+toml         = { workspace = true }
+anyhow       = { workspace = true }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+chrono       = { workspace = true }
+uuid         = { workspace = true }
+sha2         = { workspace = true }
+blake3       = { workspace = true }
+hex          = { workspace = true }

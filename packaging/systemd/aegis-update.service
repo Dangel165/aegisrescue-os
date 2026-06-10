@@ -1,0 +1,25 @@
+[Unit]
+Description=AegisRescue Update Service
+Documentation=https://aegisrescue.io/docs/update
+After=network-online.target aegisd.service
+Wants=network-online.target
+ConditionPathExists=/etc/aegis/policy.toml
+
+[Service]
+Type=oneshot
+ExecStartPre=/opt/aegis/bin/aegis-preflight --only network --strict
+ExecStart=/opt/aegis/bin/aegis-update apply --only sigs,yara,ioc
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aegis-update
+
+User=aegis
+Group=aegis
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/aegis
+
+[Install]
+WantedBy=multi-user.target

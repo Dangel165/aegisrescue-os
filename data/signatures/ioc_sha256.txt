@@ -1,0 +1,7 @@
+# IOC SHA-256 해시 목록
+# 출처: 공개 위협 인텔리전스 피드
+# 이 파일은 예시이며 실제 배포 시 MISP/OTX/VirusTotal에서 업데이트됩니다
+
+# WannaCry 변종
+24d004a104d4d54034dbcffc2a4b19a11f39008a575aa614ea04703480b1022c
+ed01ebfbc9eb5bbea545af4d01bf5f1071661840480439c6e5babe8e080e41aa

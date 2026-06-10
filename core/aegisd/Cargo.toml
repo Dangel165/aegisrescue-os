@@ -1,0 +1,28 @@
+[package]
+name    = "aegisd"
+version = "0.1.0"
+edition = "2021"
+description = "AegisRescue system daemon — policy enforcement and job orchestrator"
+license = "GPL-3.0"
+
+[[bin]]
+name = "aegisd"
+path = "src/main.rs"
+
+[dependencies]
+aegis-common = { path = "../aegis-common" }
+tokio        = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+toml         = { workspace = true }
+anyhow       = { workspace = true }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap         = { workspace = true }
+chrono       = { workspace = true }
+uuid         = { workspace = true }
+nix          = { workspace = true }
+libc         = { workspace = true }
+rusqlite     = { workspace = true }
+tokio-stream = "0.1"

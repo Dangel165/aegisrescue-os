@@ -1,0 +1,65 @@
+#!/bin/sh
+# live-boot 스크립트 — AegisRescue 부팅 모드 초기화
+# /etc/initramfs-tools/scripts/live-bottom/aegis-mode
+
+PREREQ="live"
+
+prereqs() { echo "$PREREQ"; }
+
+case "$1" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /scripts/live-functions 2>/dev/null || true
+
+log_begin_msg "AegisRescue: 부팅 모드 초기화"
+
+# 커널 파라미터에서 aegis.mode 읽기
+AEGIS_MODE=""
+for param in $(cat /proc/cmdline); do
+    case "$param" in
+        aegis.mode=*) AEGIS_MODE="${param#aegis.mode=}" ;;
+    esac
+done
+
+ROOTMNT="${rootmnt:-/root}"
+
+write_mode() {
+    mkdir -p "${ROOTMNT}/run/aegis"
+    echo "$1" > "${ROOTMNT}/run/aegis/mode"
+    log_success_msg "AegisRescue 모드: $1"
+}
+
+case "$AEGIS_MODE" in
+    forensic)
+        write_mode "forensic"
+        # 포렌식 모드: 모든 디스크 RO 강제, swap 비활성
+        echo 0 > /proc/sys/vm/swappiness 2>/dev/null || true
+        # nftables Air-Gap 즉시 적용
+        if [ -x /sbin/nft ] && [ -f "${ROOTMNT}/etc/nftables.conf" ]; then
+            nft -f "${ROOTMNT}/etc/nftables.conf" 2>/dev/null || true
+        fi
+        ;;
+    airgap)
+        write_mode "airgap"
+        # Air-Gap 모드: 네트워크 즉시 격리
+        if [ -x /sbin/nft ] && [ -f "${ROOTMNT}/etc/nftables.conf" ]; then
+            nft -f "${ROOTMNT}/etc/nftables.conf" 2>/dev/null || true
+        fi
+        ;;
+    live|"")
+        write_mode "live"
+        ;;
+    *)
+        write_mode "$AEGIS_MODE"
+        ;;
+esac
+
+# /run/aegis/status 초기화
+cat > "${ROOTMNT}/run/aegis/status" <<EOF
+mode=${AEGIS_MODE:-live}
+boot_time=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
+kernel=$(uname -r 2>/dev/null || echo "unknown")
+EOF
+
+log_end_msg

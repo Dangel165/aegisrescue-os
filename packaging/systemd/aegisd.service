@@ -1,0 +1,47 @@
+[Unit]
+Description=AegisRescue System Daemon
+Documentation=man:aegisd(8)
+After=local-fs.target network.target
+Before=graphical.target
+DefaultDependencies=no
+
+[Service]
+Type=notify
+ExecStartPre=/usr/bin/aegis-preflight
+ExecStart=/usr/bin/aegisd \
+    --policy /etc/aegis/policy.toml \
+    --socket /run/aegis/aegisd.sock \
+    --db /var/lib/aegis/aegisd.db \
+    --foreground
+
+# 보안 강화
+User=root
+Group=aegis
+RuntimeDirectory=aegis
+RuntimeDirectoryMode=0750
+StateDirectory=aegis
+LogsDirectory=aegis
+
+# 네임스페이스 격리
+PrivateTmp=yes
+PrivateDevices=no
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aegis /var/log/aegis /run/aegis /mnt/targets /mnt/evidence
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+NoNewPrivileges=yes
+
+# 재시작 정책
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

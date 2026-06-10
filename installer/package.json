@@ -1,0 +1,20 @@
+{
+  "name": "aegis-installer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev":   "vite",
+    "build": "vite build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.5"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3",
+    "@tauri-apps/cli": "^1.5",
+    "svelte": "^4",
+    "typescript": "^5",
+    "vite": "^5"
+  }
+}

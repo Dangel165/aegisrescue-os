@@ -1,0 +1,28 @@
+[package]
+name    = "aegis-scan"
+version = "0.1.0"
+edition = "2021"
+description = "AegisRescue multi-engine malware scanner"
+license = "GPL-3.0"
+
+[[bin]]
+name = "aegis-scan"
+path = "src/main.rs"
+
+[dependencies]
+aegis-common = { path = "../aegis-common" }
+tokio        = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+anyhow       = { workspace = true }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap         = { workspace = true }
+chrono       = { workspace = true }
+uuid         = { workspace = true }
+walkdir      = { workspace = true }
+rayon        = { workspace = true }
+regex        = { workspace = true }
+indicatif    = { workspace = true }
+goblin       = { workspace = true }

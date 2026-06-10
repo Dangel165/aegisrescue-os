@@ -1,0 +1,43 @@
+{
+  "$schema": "../../gui/node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:1421",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "AegisRescue Installer",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": { "all": false },
+      "dialog": { "all": true },
+      "fs": { "all": true, "scope": ["/tmp/aegis_install/**", "/mnt/**"] },
+      "notification": { "all": true }
+    },
+    "bundle": {
+      "active": true,
+      "identifier": "io.aegisrescue.installer",
+      "targets": "all"
+    },
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "AegisRescue 설치",
+        "width": 900,
+        "height": 640,
+        "minWidth": 800,
+        "minHeight": 560,
+        "resizable": false,
+        "center": true,
+        "decorations": true
+      }
+    ]
+  }
+}

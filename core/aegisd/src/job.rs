@@ -1,0 +1,83 @@
+//! 작업 실행기 — 각 JobType을 해당 aegis-* 서브프로세스로 디스패치
+
+use aegis_common::types::{AegisJob, JobStatus, JobType};
+use chrono::Utc;
+use tracing::{error, info};
+
+pub async fn execute(mut job: AegisJob) -> AegisJob {
+    job.status = JobStatus::Running;
+    job.started_at = Some(Utc::now());
+
+    info!(job_id = %job.id, job_type = ?job.job_type, "executing job");
+
+    let result = dispatch(&job.job_type).await;
+
+    job.completed_at = Some(Utc::now());
+    match result {
+        Ok(()) => {
+            job.status = JobStatus::Completed;
+            info!(job_id = %job.id, "job completed");
+        }
+        Err(e) => {
+            job.status = JobStatus::Failed;
+            job.error = Some(e.to_string());
+            error!(job_id = %job.id, error = %e, "job failed");
+        }
+    }
+
+    job
+}
+
+async fn dispatch(job_type: &JobType) -> anyhow::Result<()> {
+    match job_type {
+        JobType::QuickScan { target } => {
+            run_tool("aegis-scan", &["--quick", &target.to_string_lossy()]).await
+        }
+        JobType::FullScan { target } => {
+            run_tool("aegis-scan", &["--full", &target.to_string_lossy()]).await
+        }
+        JobType::RansomwareRecovery { target } => {
+            run_tool("aegis-recover", &[&target.to_string_lossy()]).await
+        }
+        JobType::BootRepair { device } => {
+            run_tool("aegis-boot", &["repair", &device.to_string_lossy()]).await
+        }
+        JobType::DiskImage { source, dest } => {
+            run_tool("aegis-image", &[
+                &source.to_string_lossy(), &dest.to_string_lossy()
+            ]).await
+        }
+        JobType::ForensicCapture { target } => {
+            run_tool("aegis-forensic", &["capture", &target.to_string_lossy()]).await
+        }
+        JobType::Backup { source, dest } => {
+            run_tool("aegis-image", &[
+                "backup", &source.to_string_lossy(), &dest.to_string_lossy()
+            ]).await
+        }
+        JobType::MountDisk { device } => {
+            run_tool("aegis-mount", &["mount", &device.to_string_lossy()]).await
+        }
+        JobType::SandboxAnalysis { sample } => {
+            run_tool("aegis-sandbox", &["run", &sample.to_string_lossy()]).await
+        }
+    }
+}
+
+async fn run_tool(tool: &str, args: &[&str]) -> anyhow::Result<()> {
+    let status = tokio::process::Command::new(tool)
+        .args(args)
+        .status()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to spawn {}: {}", tool, e))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{} exited with code {:?}",
+            tool,
+            status.code()
+        ))
+    }
+}

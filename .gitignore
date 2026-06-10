@@ -1,0 +1,35 @@
+/target
+**/target
+Cargo.lock
+
+# 빌드 결과물
+build/out/
+build/squashfs-root/
+build/tools/
+build/gui/
+build/aegis.squashfs
+build/iso/live/
+
+# 비밀 키 (절대 커밋 금지)
+security/keys/signing/*.pem
+security/keys/signing/*.key
+security/keys/mok/*.key
+
+# Node 모듈
+node_modules/
+gui/node_modules/
+
+# GUI 빌드
+gui/dist/
+gui/build/
+gui/src-tauri/target/
+
+# 환경 파일
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
