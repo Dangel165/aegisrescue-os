@@ -194,10 +194,10 @@ pub struct AegisJob {
 pub enum JobType {
     QuickScan { target: PathBuf },
     FullScan { target: PathBuf },
-    RansomwareRecovery { target: PathBuf },
+    RansomwareRecovery { target: PathBuf, output: PathBuf },
     BootRepair { device: PathBuf },
     DiskImage { source: PathBuf, dest: PathBuf },
-    ForensicCapture { target: PathBuf },
+    ForensicCapture { target: PathBuf, output: PathBuf },
     Backup { source: PathBuf, dest: PathBuf },
     MountDisk { device: PathBuf },
     SandboxAnalysis { sample: PathBuf },

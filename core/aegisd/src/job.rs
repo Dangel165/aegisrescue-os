@@ -36,8 +36,13 @@ async fn dispatch(job_type: &JobType) -> anyhow::Result<()> {
         JobType::FullScan { target } => {
             run_tool("aegis-scan", &["--full".into(), target.display().to_string()]).await
         }
-        JobType::RansomwareRecovery { target } => {
-            run_tool("aegis-recover", &[target.display().to_string()]).await
+        JobType::RansomwareRecovery { target, output } => {
+            run_tool("aegis-recover", &[
+                "auto".into(),
+                target.display().to_string(),
+                "--output".into(),
+                output.display().to_string(),
+            ]).await
         }
         JobType::BootRepair { device } => {
             run_tool("aegis-boot", &["repair".into(), device.display().to_string()]).await
@@ -48,8 +53,13 @@ async fn dispatch(job_type: &JobType) -> anyhow::Result<()> {
                 dest.display().to_string(),
             ]).await
         }
-        JobType::ForensicCapture { target } => {
-            run_tool("aegis-forensic", &["capture".into(), target.display().to_string()]).await
+        JobType::ForensicCapture { target, output } => {
+            run_tool("aegis-forensic", &[
+                "capture".into(),
+                target.display().to_string(),
+                "--output".into(),
+                output.display().to_string(),
+            ]).await
         }
         JobType::Backup { source, dest } => {
             run_tool("aegis-image", &[

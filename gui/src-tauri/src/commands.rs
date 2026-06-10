@@ -1,6 +1,6 @@
 //! Tauri 커맨드 — aegisd IPC 브리지
 
-use aegis_common::ipc::{DaemonRequest, DaemonResponse, SystemStatus, AEGIS_SOCKET_PATH};
+use aegis_common::ipc::{DaemonRequest, DaemonResponse, AEGIS_SOCKET_PATH};
 use aegis_common::types::JobType;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -62,7 +62,10 @@ pub async fn start_scan(target: String, quick: bool) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn start_recovery(target: String, output: String) -> Result<String, String> {
-    let job_type = JobType::RansomwareRecovery { target: PathBuf::from(target) };
+    let job_type = JobType::RansomwareRecovery {
+        target: PathBuf::from(target),
+        output: PathBuf::from(output),
+    };
     match ipc_call(DaemonRequest::SubmitJob { job_type }).await? {
         DaemonResponse::JobSubmitted { job_id } => Ok(job_id.to_string()),
         DaemonResponse::Error { message, .. } => Err(message),
@@ -82,7 +85,10 @@ pub async fn start_boot_repair(device: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn start_forensic_capture(source: String, output: String) -> Result<String, String> {
-    let job_type = JobType::ForensicCapture { target: PathBuf::from(source) };
+    let job_type = JobType::ForensicCapture {
+        target: PathBuf::from(source),
+        output: PathBuf::from(output),
+    };
     match ipc_call(DaemonRequest::SubmitJob { job_type }).await? {
         DaemonResponse::JobSubmitted { job_id } => Ok(job_id.to_string()),
         DaemonResponse::Error { message, .. } => Err(message),
@@ -195,8 +201,9 @@ pub async fn run_ai_analysis(file: String) -> Result<Value, String> {
 
 #[tauri::command]
 pub async fn run_sandbox(sample: String, level: u8) -> Result<Value, String> {
+    let level_arg = level.to_string();
     let output = tokio::process::Command::new("aegis-sandbox")
-        .args(["run", &sample, "--level", &level.to_string()])
+        .args(["run", sample.as_str(), "--level", level_arg.as_str()])
         .output()
         .await
         .map_err(|e| e.to_string())?;
