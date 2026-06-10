@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     let state = state::AppState::new(policy, args.db).await?;
 
     // 네트워크 격리 정책 적용
-    network::apply_policy(&state.policy.network).await;
+    network::apply_policy(&state.policy().network).await;
 
     // SIGTERM / SIGINT 처리
     let state_clone = state.clone();
