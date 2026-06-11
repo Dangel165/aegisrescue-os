@@ -10,6 +10,7 @@ mkdir -p /tmp/.X11-unix
 chmod 1777 /tmp/.X11-unix 2>/dev/null || true
 
 uid="$(id -u)"
+export HOSTNAME=localhost
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
 mkdir -p "${XDG_RUNTIME_DIR}"
 chmod 700 "${XDG_RUNTIME_DIR}" 2>/dev/null || true
@@ -25,7 +26,7 @@ run_startx() {
     local label="$1"
     shift
     echo "--- try: ${label} ---" >>"${log}"
-    if startx -- :0 -vt"${_vt}" -nolisten tcp -noreset "$@" >>"${log}" 2>&1; then
+    if startx -- :0 -nolisten tcp -noreset vt"${_vt}" "$@" >>"${log}" 2>&1; then
         echo "ok: ${label}" >>"${log}"
         return 0
     fi

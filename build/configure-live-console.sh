@@ -46,7 +46,7 @@ elif [ -z "${DISPLAY:-}" ] && [ -f /tmp/aegis-startx.log ]; then
     echo "  GUI start failed:"
     echo "    /tmp/aegis-startx.log"
     echo "    /var/log/Xorg.0.log"
-    echo "  Fallback: Alt+F2 for CLI  |  retry: startx -- :0 -vt1"
+    echo "  Fallback: Alt+F2 for CLI  |  retry: startx -- :0 vt1"
     echo ""
 fi
 EOF
