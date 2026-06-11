@@ -271,39 +271,7 @@ impl Installer {
             anyhow::anyhow!("시스템 파티션 마운트 실패 ({} → {}): {}", target, mount_root, e)
         })?;
 
-        if let Some(squashfs) = resolve_live_squashfs() {
-            progress_cb(InstallProgress {
-                phase: InstallPhase::CopyingFiles,
-                percent: 40,
-                message: format!("시스템 이미지 압축 해제 중 ({})...", squashfs.display()),
-                error: None,
-            });
-
-            if is_tool_available("unsquashfs") {
-                run_command("unsquashfs", &["-f", "-d", mount_root, squashfs.to_str().unwrap()])
-                    .await
-                    .map_err(|e| anyhow::anyhow!("unsquashfs 실패: {}", e))?;
-            } else {
-                tracing::warn!("unsquashfs not found — rsync fallback");
-                progress_cb(InstallProgress {
-                    phase: InstallPhase::CopyingFiles,
-                    percent: 42,
-                    message: "unsquashfs 없음 — Live 시스템에서 rsync 복사 중...".into(),
-                    error: None,
-                });
-                copy_live_root_with_rsync(mount_root).await?;
-            }
-        } else {
-            tracing::warn!("live squashfs not found — rsync fallback from /");
-            progress_cb(InstallProgress {
-                phase: InstallPhase::CopyingFiles,
-                percent: 40,
-                message: "Live 시스템에서 파일 복사 중 (rsync)...".into(),
-                error: None,
-            });
-
-            copy_live_root_with_rsync(mount_root).await?;
-        }
+        copy_live_system_to_mount(mount_root, progress_cb).await?;
 
         ensure_mounted_root(mount_root)?;
 
@@ -550,6 +518,45 @@ fn resolve_live_squashfs() -> Option<PathBuf> {
         .map(|p| p.to_path_buf())
 }
 
+async fn copy_live_system_to_mount<F>(mount_root: &str, progress_cb: &F) -> anyhow::Result<()>
+where
+    F: Fn(InstallProgress),
+{
+    if let Some(squashfs) = resolve_live_squashfs() {
+        if is_tool_available("unsquashfs") {
+            progress_cb(InstallProgress {
+                phase: InstallPhase::CopyingFiles,
+                percent: 40,
+                message: format!("시스템 이미지 압축 해제 중 ({})...", squashfs.display()),
+                error: None,
+            });
+            run_command("unsquashfs", &["-f", "-d", mount_root, squashfs.to_str().unwrap()])
+                .await
+                .map_err(|e| anyhow::anyhow!("unsquashfs 실패: {}", e))?;
+            return Ok(());
+        }
+    }
+
+    if is_tool_available("rsync") {
+        progress_cb(InstallProgress {
+            phase: InstallPhase::CopyingFiles,
+            percent: 42,
+            message: "Live 시스템에서 rsync 복사 중...".into(),
+            error: None,
+        });
+        copy_live_root_with_rsync(mount_root).await?;
+        return Ok(());
+    }
+
+    progress_cb(InstallProgress {
+        phase: InstallPhase::CopyingFiles,
+        percent: 42,
+        message: "Live 시스템에서 tar 복사 중...".into(),
+        error: None,
+    });
+    copy_live_root_with_tar(mount_root).await
+}
+
 async fn copy_live_root_with_rsync(mount_root: &str) -> anyhow::Result<()> {
     run_command(
         "rsync",
@@ -567,6 +574,19 @@ async fn copy_live_root_with_rsync(mount_root: &str) -> anyhow::Result<()> {
     )
     .await
     .map_err(|e| anyhow::anyhow!("rsync 실패: {}", e))
+}
+
+async fn copy_live_root_with_tar(mount_root: &str) -> anyhow::Result<()> {
+    let script = format!(
+        "cd / && tar --numeric-owner \
+         --exclude=./proc --exclude=./sys --exclude=./dev \
+         --exclude=./run --exclude=./mnt --exclude=./tmp \
+         --exclude=./mnt/aegis_install \
+         -cf - . | tar -C {mount_root} -xpf -"
+    );
+    run_command("sh", &["-c", &script])
+        .await
+        .map_err(|e| anyhow::anyhow!("tar 복사 실패: {}", e))
 }
 
 async fn run_command(cmd: &str, args: &[&str]) -> anyhow::Result<()> {

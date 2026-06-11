@@ -316,7 +316,7 @@ build_base_wsl() {
 apt-utils,locales,console-setup,\
 sudo,passwd,adduser,util-linux,procps,coreutils,\
 findutils,grep,sed,gawk,curl,wget,ca-certificates,\
-gnupg,lsb-release,python3-minimal,xz-utils,zstd,lz4 \
+gnupg,lsb-release,squashfs-tools,rsync,python3-minimal,xz-utils,zstd,lz4 \
         noble \
         "${CHROOT_DIR}" \
         http://archive.ubuntu.com/ubuntu/ \
@@ -869,10 +869,29 @@ build_gui_wsl() {
 }
 
 # ─── chroot 파일 설치 ────────────────────────────────────────────
+ensure_chroot_installer_tools() {
+    local chroot="${1:-${CHROOT_DIR}}"
+    [[ -d "${chroot}" ]] || return 0
+    wsl_mount_chroot "${chroot}" 2>/dev/null || true
+    chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+        apt-get update -qq 2>/dev/null || true
+    chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+        apt-get install -y --no-install-recommends squashfs-tools rsync \
+        2>/dev/null || warn "squashfs-tools/rsync 설치 실패 — chroot apt 확인"
+    if chroot "${chroot}" command -v unsquashfs >/dev/null 2>&1 && \
+       chroot "${chroot}" command -v rsync >/dev/null 2>&1; then
+        ok "Live 설치 도구: unsquashfs + rsync"
+    else
+        warn "Live ISO에 unsquashfs/rsync 없음 — 디스크 설치 실패 가능"
+    fi
+}
+
 populate_chroot_wsl() {
     step "chroot 파일시스템 구성"
 
     wsl_mount_chroot "${CHROOT_DIR}"
+
+    ensure_chroot_installer_tools "${CHROOT_DIR}"
 
     # Live 부팅 패키지/설정 (기존 chroot 업데이트 시에도 적용)
     chroot "${CHROOT_DIR}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
@@ -985,6 +1004,9 @@ build_iso_wsl() {
     step "squashfs 및 ISO 생성"
 
     mkdir -p "${OUT_DIR}" "${ISO_STAGE}"/{boot/grub,boot/grub/fonts,EFI/BOOT,live,isolinux}
+
+    # --iso-only 도 포함: squashfs 전에 설치 도구 보장
+    ensure_chroot_installer_tools "${CHROOT_DIR}"
 
     # squashfs
     log "squashfs 생성 중 (xz 압축, ${JOBS} 코어)..."
