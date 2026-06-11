@@ -58,6 +58,10 @@ EOF
 EOF
 
     chroot "${chroot}" systemctl enable getty@tty1.service 2>/dev/null || true
+
+    # Custom ISO has no md5sum.txt on media — skip casper integrity check (blocks/slows boot in VMs)
+    chroot "${chroot}" systemctl disable casper-md5check.service 2>/dev/null || true
+    chroot "${chroot}" systemctl mask casper-md5check.service 2>/dev/null || true
 }
 
 # Shared kernel cmdline (keep in sync with build/grub/grub.cfg).
