@@ -1101,29 +1101,23 @@ build_iso_wsl() {
 }
 
 setup_syslinux_wsl() {
-    local syslinux_bin=""
-    for search_path in \
-        "/usr/lib/ISOLINUX" \
-        "/usr/lib/syslinux/bios" \
-        "/usr/share/syslinux" \
-        "/usr/lib/syslinux"; do
-        [[ -f "${search_path}/isohdpfx.bin" ]] && syslinux_bin="$search_path" && break
-        [[ -f "${search_path}/isolinux.bin"  ]] && syslinux_bin="$search_path" && break
-    done
+    # shellcheck source=stage-isolinux.sh
+    source "${WSL_HOME}/build/stage-isolinux.sh"
 
-    if [[ -n "$syslinux_bin" ]]; then
-        for f in isohdpfx.bin isolinux.bin ldlinux.c32 \
-                 libcom32.c32 libutil.c32 vesamenu.c32; do
-            [[ -f "${syslinux_bin}/${f}" ]] && \
-                cp "${syslinux_bin}/${f}" "${ISO_STAGE}/isolinux/" 2>/dev/null || true
-        done
-        ok "SYSLINUX 파일 복사됨"
+    local isolinux_rc=0
+    stage_isolinux_files "${ISO_STAGE}" || isolinux_rc=$?
+    if [[ ${isolinux_rc} -eq 0 ]]; then
+        ok "SYSLINUX 파일 복사됨 (isolinux.bin + ldlinux.c32)"
+    elif [[ ${isolinux_rc} -eq 2 ]]; then
+        err "ldlinux.c32 없음 — sudo apt install syslinux-common 후 ISO 재빌드"
     else
-        warn "SYSLINUX 없음 — BIOS 부팅 제한됨"
+        warn "SYSLINUX 없음 — BIOS 부팅 제한됨 (apt install isolinux syslinux-common)"
         dd if=/dev/zero bs=512 count=1  of="${ISO_STAGE}/isolinux/isohdpfx.bin" 2>/dev/null
         dd if=/dev/zero bs=512 count=4  of="${ISO_STAGE}/isolinux/isolinux.bin"  2>/dev/null
         touch "${ISO_STAGE}/isolinux/boot.cat"
     fi
+
+    [[ -f "${ISO_STAGE}/isolinux/boot.cat" ]] || touch "${ISO_STAGE}/isolinux/boot.cat"
 
     cat > "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF
 DEFAULT vesamenu.c32

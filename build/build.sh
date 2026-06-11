@@ -554,28 +554,23 @@ install_grub_fonts() {
 }
 
 setup_syslinux() {
-    local syslinux_dir
-    syslinux_dir=$(find /usr/lib -name "isohdpfx.bin" 2>/dev/null | head -1 | xargs dirname)
-    if [[ -z "$syslinux_dir" ]]; then
-        syslinux_dir=$(find /usr/share -name "isohdpfx.bin" 2>/dev/null | head -1 | xargs dirname)
-    fi
+    # shellcheck source=stage-isolinux.sh
+    source "${SCRIPT_DIR}/stage-isolinux.sh"
 
-    if [[ -n "$syslinux_dir" ]]; then
-        cp "${syslinux_dir}/isohdpfx.bin"  "${ISO_STAGE}/isolinux/" 2>/dev/null || true
-        cp "${syslinux_dir}/isolinux.bin"  "${ISO_STAGE}/isolinux/" 2>/dev/null || \
-        cp "$(find /usr/lib -name isolinux.bin 2>/dev/null | head -1)" \
-           "${ISO_STAGE}/isolinux/" 2>/dev/null || true
-        cp "${syslinux_dir}/ldlinux.c32"   "${ISO_STAGE}/isolinux/" 2>/dev/null || true
-        cp "${syslinux_dir}/libcom32.c32"  "${ISO_STAGE}/isolinux/" 2>/dev/null || true
-        cp "${syslinux_dir}/libutil.c32"   "${ISO_STAGE}/isolinux/" 2>/dev/null || true
-        cp "${syslinux_dir}/vesamenu.c32"  "${ISO_STAGE}/isolinux/" 2>/dev/null || true
+    local isolinux_rc=0
+    stage_isolinux_files "${ISO_STAGE}" || isolinux_rc=$?
+    if [[ ${isolinux_rc} -eq 0 ]]; then
+        ok "SYSLINUX 파일 복사됨 (isolinux.bin + ldlinux.c32)"
+    elif [[ ${isolinux_rc} -eq 2 ]]; then
+        err "ldlinux.c32 없음 — apt install syslinux-common 후 ISO 재빌드"
     else
         warn "SYSLINUX 파일 없음 — BIOS 부팅 비활성화"
-        # 더미 파일로 xorriso 오류 방지
         dd if=/dev/zero bs=512 count=1 of="${ISO_STAGE}/isolinux/isohdpfx.bin" 2>/dev/null
         dd if=/dev/zero bs=512 count=4 of="${ISO_STAGE}/isolinux/isolinux.bin" 2>/dev/null
         touch "${ISO_STAGE}/isolinux/boot.cat"
     fi
+
+    [[ -f "${ISO_STAGE}/isolinux/boot.cat" ]] || touch "${ISO_STAGE}/isolinux/boot.cat"
 
     # SYSLINUX 설정
     cat > "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF
