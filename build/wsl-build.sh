@@ -175,6 +175,7 @@ EOF
         xz-utils zstd lz4 gzip \
         # 유틸
         rsync pv curl wget ca-certificates \
+        imagemagick librsvg2-bin \
         git build-essential pkg-config libssl-dev \
         # musl 정적 바이너리
         musl-tools musl-dev \
