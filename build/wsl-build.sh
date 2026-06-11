@@ -161,31 +161,23 @@ EOF
         ok "/etc/wsl.conf 생성됨"
     fi
 
-    # 빌드 의존성 설치
+    # 빌드 의존성 설치 (연속 줄 중간에 # 주석 금지 — bash가 apt-get을 끊고 debootstrap로 해석함)
     log "시스템 패키지 업데이트 및 설치 중..."
     apt-get update -qq
-    apt-get install -y --no-install-recommends \
-        # ISO / 파일시스템 도구
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         debootstrap xorriso squashfs-tools \
         grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed \
         grub2-common grub-common \
         isolinux syslinux syslinux-common \
         dosfstools mtools \
-        # 압축
         xz-utils zstd lz4 gzip \
-        # 유틸
         rsync pv curl wget ca-certificates \
         imagemagick librsvg2-bin \
         git build-essential pkg-config libssl-dev \
-        # musl 정적 바이너리
         musl-tools musl-dev \
-        # Tauri 공통 (WebKitGTK는 ensure_tauri_deps에서 Ubuntu 버전별 처리)
         libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
-        # QEMU 테스트
         qemu-system-x86 ovmf \
-        # 기타
-        locales sudo gpg apt-transport-https \
-        2>/dev/null | grep -E "^(Setting up|Get:|Unpacking)" | head -30 || true
+        locales sudo gpg apt-transport-https
 
     ok "패키지 설치 완료"
     ensure_tauri_deps || warn "WebKitGTK 설치 실패 — GUI 빌드는 나중에 다시 시도하세요"
