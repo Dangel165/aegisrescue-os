@@ -346,19 +346,10 @@ EOF
           "${CHROOT_DIR}/var/lib/aegis/signatures/" 2>/dev/null || true
 
     # 부팅 스플래시(Plymouth) 테마: 검은 배경 로고만 사용
-    local logo_candidates=(
-        "${AEGIS_BOOT_LOGO:-}"
-        "${PROJECT_ROOT}/assets/aegisrescue-boot-logo-black.png"
-        "/mnt/c/Users/fff20/.cursor/projects/f-ofntkd/assets/aegisrescue-boot-logo-black.png"
-        "/c/Users/fff20/.cursor/projects/f-ofntkd/assets/aegisrescue-boot-logo-black.png"
-    )
+    # shellcheck source=resolve-boot-logo.sh
+    source "${SCRIPT_DIR}/resolve-boot-logo.sh"
     local logo_src=""
-    for candidate in "${logo_candidates[@]}"; do
-        if [[ -n "$candidate" && -f "$candidate" ]]; then
-            logo_src="$candidate"
-            break
-        fi
-    done
+    logo_src="$(resolve_boot_logo "${PROJECT_ROOT}" || true)"
 
     mkdir -p "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue"
     cp "${PROJECT_ROOT}/build/plymouth/aegisrescue.plymouth" \
@@ -549,19 +540,10 @@ install_grub_fonts() {
        "${ISO_STAGE}/boot/grub/themes/aegis/" 2>/dev/null || true
 
     # 부팅 로고/배경: 검은 배경 단일 버전만 사용
-    local logo_candidates=(
-        "${AEGIS_BOOT_LOGO:-}"
-        "${PROJECT_ROOT}/assets/aegisrescue-boot-logo-black.png"
-        "/mnt/c/Users/fff20/.cursor/projects/f-ofntkd/assets/aegisrescue-boot-logo-black.png"
-        "/c/Users/fff20/.cursor/projects/f-ofntkd/assets/aegisrescue-boot-logo-black.png"
-    )
+    # shellcheck source=resolve-boot-logo.sh
+    source "${SCRIPT_DIR}/resolve-boot-logo.sh"
     local logo_src=""
-    for candidate in "${logo_candidates[@]}"; do
-        if [[ -n "$candidate" && -f "$candidate" ]]; then
-            logo_src="$candidate"
-            break
-        fi
-    done
+    logo_src="$(resolve_boot_logo "${PROJECT_ROOT}" || true)"
 
     if [[ -n "$logo_src" ]]; then
         cp "$logo_src" "${ISO_STAGE}/boot/grub/aegis-bg.png"
