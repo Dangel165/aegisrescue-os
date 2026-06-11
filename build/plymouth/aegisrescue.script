@@ -1,11 +1,9 @@
 Window.SetBackgroundTopColor(0.0, 0.0, 0.0);
 Window.SetBackgroundBottomColor(0.0, 0.0, 0.0);
 
+# aegis-bg.png = black canvas with logo already centered (see stage-boot-logos.sh)
 logo.image = Image("aegis-bg.png");
 logo.sprite = Sprite(logo.image);
-
-# Logo width as fraction of screen (0.28 = ~28% — compact boot splash)
-logo_screen_scale = 0.28;
 
 fun refresh_callback()
 {
@@ -14,14 +12,10 @@ fun refresh_callback()
     logo_width = logo.image.GetWidth();
     logo_height = logo.image.GetHeight();
 
-    new_width = screen_width * logo_screen_scale;
-    new_height = logo_height * (new_width / logo_width);
-
-    logo.sprite.SetWidth(new_width);
-    logo.sprite.SetHeight(new_height);
-    logo.sprite.SetX((screen_width - new_width) / 2);
-    logo.sprite.SetY((screen_height - new_height) / 2);
+    logo.sprite.SetX((screen_width - logo_width) / 2);
+    logo.sprite.SetY((screen_height - logo_height) / 2);
     logo.sprite.SetZ(100);
 }
 
+refresh_callback();
 Plymouth.SetRefreshFunction(refresh_callback);

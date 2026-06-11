@@ -10,17 +10,19 @@ esac
 export DISPLAY="${DISPLAY:-:0}"
 LOG=/tmp/aegis-autostart.log
 INSTALLER=/opt/aegis/bin/aegis-installer
-LOGO=/usr/share/aegis/aegisrescue-boot-logo.png
+SPLASH=/usr/share/aegis/aegis-boot-splash.png
 
 {
     echo "=== aegis-live-autostart $(date -Is) DISPLAY=${DISPLAY} ==="
 } >>"${LOG}" 2>&1
 
 if command -v nitrogen >/dev/null 2>&1; then
-    if [[ -f "${LOGO}" ]]; then
-        nitrogen --set-scaled "${LOGO}" >>"${LOG}" 2>&1 || nitrogen --set-color '#0d1117' >>"${LOG}" 2>&1 || true
+    if [[ -f "${SPLASH}" ]]; then
+        nitrogen --set-centered "${SPLASH}" >>"${LOG}" 2>&1 || \
+        nitrogen --set-scaled "${SPLASH}" >>"${LOG}" 2>&1 || \
+        nitrogen --set-color '#000000' >>"${LOG}" 2>&1 || true
     else
-        nitrogen --set-color '#0d1117' >>"${LOG}" 2>&1 || true
+        nitrogen --set-color '#000000' >>"${LOG}" 2>&1 || true
     fi
 fi
 

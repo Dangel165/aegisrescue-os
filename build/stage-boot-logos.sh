@@ -20,8 +20,17 @@ prepare_centered_boot_logo_png() {
 
     if [[ -f "$src_svg" ]] && command -v rsvg-convert >/dev/null 2>&1; then
         local logo_w=$(( canvas_w * pct / 100 ))
-        local logo_h=$(( canvas_h * pct / 100 ))
-        rsvg-convert -w "${logo_w}" -h "${logo_h}" "$src_svg" -o "$dst_png" 2>/dev/null && return 0
+        local tmp_logo
+        tmp_logo="$(mktemp /tmp/aegis-logo.XXXXXX.png)"
+        rsvg-convert -w "${logo_w}" "$src_svg" -o "${tmp_logo}" 2>/dev/null || true
+        if [[ -s "$tmp_logo" ]] && command -v convert >/dev/null 2>&1; then
+            convert -size "${canvas_w}x${canvas_h}" xc:black \
+                "$tmp_logo" -gravity center -composite PNG:"$dst_png" 2>/dev/null && {
+                rm -f "$tmp_logo"
+                return 0
+            }
+        fi
+        rm -f "$tmp_logo"
     fi
 
     local logo_w=$(( canvas_w * pct / 100 ))
@@ -37,7 +46,7 @@ prepare_boot_logo_png() {
 }
 
 prepare_menu_splash_png() {
-    prepare_centered_boot_logo_png "$1" "$2" 800 450 30 "${3:-}"
+    prepare_centered_boot_logo_png "$1" "$2" 800 450 28 "${3:-}"
 }
 
 stage_iso_boot_logos() {
@@ -54,8 +63,8 @@ stage_iso_boot_logos() {
     local logo_svg="${project_root}/docs/assets/aegisrescue-logo.svg"
     mkdir -p "${iso_stage}/boot/grub/themes/aegis" "${iso_stage}/isolinux"
 
-    prepare_centered_boot_logo_png "$logo_src" "${iso_stage}/boot/grub/aegis-bg.png" 800 450 30 "$logo_svg"
-    prepare_centered_boot_logo_png "$logo_src" "${iso_stage}/boot/grub/themes/aegis/aegis-bg.png" 800 450 30 "$logo_svg"
+    prepare_centered_boot_logo_png "$logo_src" "${iso_stage}/boot/grub/aegis-bg.png" 800 450 28 "$logo_svg"
+    prepare_centered_boot_logo_png "$logo_src" "${iso_stage}/boot/grub/themes/aegis/aegis-bg.png" 800 450 28 "$logo_svg"
     prepare_menu_splash_png "$logo_src" "${iso_stage}/isolinux/splash.png" "$logo_svg"
     return 0
 }
@@ -78,8 +87,11 @@ install_chroot_boot_logos() {
     cp "${project_root}/build/plymouth/aegisrescue.script" \
        "${chroot}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
     cp "$logo_src" "${chroot}/usr/share/aegis/aegisrescue-boot-logo.png"
+    # Plymouth + desktop: fixed canvas, logo centered on black (no runtime scaling)
     prepare_centered_boot_logo_png "$logo_src" \
-        "${chroot}/usr/share/plymouth/themes/aegisrescue/aegis-bg.png" 640 360 30 "$logo_svg"
+        "${chroot}/usr/share/plymouth/themes/aegisrescue/aegis-bg.png" 800 450 28 "$logo_svg"
+    prepare_centered_boot_logo_png "$logo_src" \
+        "${chroot}/usr/share/aegis/aegis-boot-splash.png" 800 450 28 "$logo_svg"
 
     mkdir -p "${chroot}/etc/plymouth"
     cat > "${chroot}/etc/plymouth/plymouthd.conf" <<'EOF'
