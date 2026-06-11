@@ -51,7 +51,12 @@ Terminal=false
 Categories=System;
 EOF
 
-    chroot "${chroot}" usermod -aG video,input,render aegis 2>/dev/null || true
+    chroot "${chroot}" usermod -aG video,input,render,aegis aegis 2>/dev/null || true
+
+    mkdir -p "${chroot}/etc/tmpfiles.d"
+    cat > "${chroot}/etc/tmpfiles.d/aegis-run.conf" <<'EOF'
+d /run/aegis 0775 root aegis -
+EOF
 
     # tty2 = fallback CLI while GUI runs on tty1
     chroot "${chroot}" systemctl enable getty@tty2.service 2>/dev/null || true

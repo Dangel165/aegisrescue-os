@@ -13,7 +13,9 @@ Restart=always
 RestartSec=0
 EOF
 
-    chroot "${chroot}" useradd -m -s /bin/bash -G sudo aegis 2>/dev/null || true
+    chroot "${chroot}" groupadd -r aegis 2>/dev/null || true
+    chroot "${chroot}" useradd -m -s /bin/bash -G sudo,aegis aegis 2>/dev/null || \
+        chroot "${chroot}" usermod -aG aegis aegis 2>/dev/null || true
     echo "aegis:aegis" | chroot "${chroot}" chpasswd 2>/dev/null || true
 
     mkdir -p "${chroot}/home/aegis"
