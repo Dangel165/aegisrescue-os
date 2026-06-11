@@ -28,8 +28,6 @@ message-bg-color: "#0a0a0a"
     item_padding        = 10
     item_spacing        = 4
 
-    selected_item_pixmap_style = "select_e/*.png"
-    menu_pixmap_style = "menu_e/*.png"
     scrollbar = true
     scrollbar_width = 10
 }

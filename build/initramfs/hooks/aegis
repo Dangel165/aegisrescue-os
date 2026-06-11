@@ -26,6 +26,10 @@ manual_add_modules aes-x86_64 sha256 sha512
 manual_add_modules ntfs3 exfat vfat
 
 # Plymouth boot splash theme (early boot logo)
+if [ -f /etc/plymouth/plymouthd.conf ]; then
+    mkdir -p "$DESTDIR/etc/plymouth"
+    cp /etc/plymouth/plymouthd.conf "$DESTDIR/etc/plymouth/" 2>/dev/null || true
+fi
 if [ -d /usr/share/plymouth/themes/aegisrescue ]; then
     mkdir -p "$DESTDIR/usr/share/plymouth/themes/aegisrescue"
     cp -a /usr/share/plymouth/themes/aegisrescue/. "$DESTDIR/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true

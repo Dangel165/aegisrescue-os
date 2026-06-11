@@ -259,6 +259,8 @@ copy_source() {
     chmod +x "${WSL_HOME}/build/build.sh" \
              "${WSL_HOME}/build/wsl-build.sh" \
              "${WSL_HOME}/build/render-boot-logo.sh" \
+             "${WSL_HOME}/build/stage-boot-logos.sh" \
+             "${WSL_HOME}/build/grub-efi-standalone.sh" \
              "${WSL_HOME}/build/initramfs/hooks/aegis" \
              "${WSL_HOME}/build/initramfs/scripts/live-bottom/aegis-mode" \
              2>/dev/null || true
@@ -924,27 +926,14 @@ EOF
     cp -r "${WSL_HOME}/data/signatures/"* \
           "${CHROOT_DIR}/var/lib/aegis/signatures/" 2>/dev/null || true
 
-    # 부팅 스플래시(Plymouth) 테마: 검은 배경 로고만 사용
-    # shellcheck source=resolve-boot-logo.sh
-    source "${WSL_HOME}/build/resolve-boot-logo.sh"
-    local logo_src=""
-    logo_src="$(resolve_boot_logo "${WSL_HOME}" || true)"
-
-    mkdir -p "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue"
-    cp "${WSL_HOME}/build/plymouth/aegisrescue.plymouth" \
-       "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
-    cp "${WSL_HOME}/build/plymouth/aegisrescue.script" \
-       "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
-    if [[ -n "$logo_src" ]]; then
-        cp "$logo_src" "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue/aegis-bg.png"
-        mkdir -p "${CHROOT_DIR}/usr/share/aegis"
-        cp "$logo_src" "${CHROOT_DIR}/usr/share/aegis/aegisrescue-boot-logo.png"
+    # 부팅 스플래시(Plymouth) + 데스크톱 로고
+    # shellcheck source=stage-boot-logos.sh
+    source "${WSL_HOME}/build/stage-boot-logos.sh"
+    if install_chroot_boot_logos "${WSL_HOME}" "${CHROOT_DIR}"; then
+        ok "chroot 부팅 로고/Plymouth 테마 적용"
+    else
+        warn "chroot 부팅 로고 없음 — assets/aegisrescue-boot-logo-black.png 확인"
     fi
-    chroot "${CHROOT_DIR}" update-alternatives --install \
-        /usr/share/plymouth/themes/default.plymouth default.plymouth \
-        /usr/share/plymouth/themes/aegisrescue/aegisrescue.plymouth 100 2>/dev/null || true
-    chroot "${CHROOT_DIR}" update-alternatives --set default.plymouth \
-        /usr/share/plymouth/themes/aegisrescue/aegisrescue.plymouth 2>/dev/null || true
 
     # systemd 서비스
     mkdir -p "${CHROOT_DIR}/etc/systemd/system"
@@ -1040,17 +1029,11 @@ build_iso_wsl() {
        cp "${WSL_HOME}/build/grub/theme.txt" \
           "${ISO_STAGE}/boot/grub/themes/aegis/theme.txt" 2>/dev/null || true
 
-    # 부팅 로고/배경: 검은 배경 단일 버전만 사용
-    # shellcheck source=resolve-boot-logo.sh
-    source "${WSL_HOME}/build/resolve-boot-logo.sh"
-    local logo_src=""
-    logo_src="$(resolve_boot_logo "${WSL_HOME}" || true)"
-
-    if [[ -n "$logo_src" ]]; then
-        cp "$logo_src" "${ISO_STAGE}/boot/grub/aegis-bg.png"
-        cp "$logo_src" "${ISO_STAGE}/boot/grub/themes/aegis/aegis-bg.png" 2>/dev/null || true
-        cp "$logo_src" "${ISO_STAGE}/isolinux/splash.png" 2>/dev/null || true
-        ok "부팅 로고 적용: $(basename "$logo_src")"
+    # 부팅 로고/배경 (GRUB + ISOLINUX + EFI embed)
+    # shellcheck source=stage-boot-logos.sh
+    source "${WSL_HOME}/build/stage-boot-logos.sh"
+    if stage_iso_boot_logos "${WSL_HOME}" "${ISO_STAGE}"; then
+        ok "부팅 로고 적용: aegisrescue-boot-logo-black.png"
     else
         warn "부팅 로고 파일을 찾지 못했습니다. AEGIS_BOOT_LOGO=/path/logo.png 지정 가능"
     fi
@@ -1167,28 +1150,14 @@ EOF
 
 create_efi_wsl() {
     local efi_img="${ISO_STAGE}/EFI/BOOT/efiboot.img"
-    dd if=/dev/zero bs=1M count=10 of="${efi_img}" 2>/dev/null
-    mkfs.vfat "${efi_img}" 2>/dev/null || { warn "mkfs.vfat 실패"; return 0; }
+    # shellcheck source=grub-efi-standalone.sh
+    source "${WSL_HOME}/build/grub-efi-standalone.sh"
 
-    if command -v grub-mkstandalone &>/dev/null; then
-        log "GRUB EFI 스탠드얼론 이미지 생성 중..."
-        local efi_tmp="/tmp/aegis_grubx64.efi"
-        grub-mkstandalone \
-            --format=x86_64-efi \
-            --output="${efi_tmp}" \
-            --locales="" \
-            --themes="" \
-            "boot/grub/grub.cfg=${WSL_HOME}/build/grub/grub.cfg" \
-            2>/dev/null || true
-
-        if [[ -f "${efi_tmp}" ]]; then
-            mmd  -i "${efi_img}" ::/EFI ::/EFI/BOOT 2>/dev/null || true
-            mcopy -i "${efi_img}" "${efi_tmp}" ::/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
-            rm -f "${efi_tmp}"
-            ok "EFI 이미지 생성됨"
-        fi
+    log "GRUB EFI 스탠드얼론 이미지 생성 중 (로고/폰트 포함)..."
+    if create_grub_efi_standalone "${ISO_STAGE}" "${ISO_STAGE}/boot/grub/grub.cfg" "${efi_img}"; then
+        ok "EFI 이미지 생성됨"
     else
-        warn "grub-mkstandalone 없음 — EFI 부팅 제한됨"
+        warn "EFI 이미지 생성 실패 — grub-mkstandalone 확인"
     fi
 }
 

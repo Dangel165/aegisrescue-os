@@ -345,27 +345,14 @@ EOF
     cp -r "${PROJECT_ROOT}/data/signatures/"* \
           "${CHROOT_DIR}/var/lib/aegis/signatures/" 2>/dev/null || true
 
-    # 부팅 스플래시(Plymouth) 테마: 검은 배경 로고만 사용
-    # shellcheck source=resolve-boot-logo.sh
-    source "${SCRIPT_DIR}/resolve-boot-logo.sh"
-    local logo_src=""
-    logo_src="$(resolve_boot_logo "${PROJECT_ROOT}" || true)"
-
-    mkdir -p "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue"
-    cp "${PROJECT_ROOT}/build/plymouth/aegisrescue.plymouth" \
-       "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
-    cp "${PROJECT_ROOT}/build/plymouth/aegisrescue.script" \
-       "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
-    if [[ -n "$logo_src" ]]; then
-        cp "$logo_src" "${CHROOT_DIR}/usr/share/plymouth/themes/aegisrescue/aegis-bg.png"
-        mkdir -p "${CHROOT_DIR}/usr/share/aegis"
-        cp "$logo_src" "${CHROOT_DIR}/usr/share/aegis/aegisrescue-boot-logo.png"
+    # 부팅 스플래시(Plymouth) + 데스크톱 로고
+    # shellcheck source=stage-boot-logos.sh
+    source "${SCRIPT_DIR}/stage-boot-logos.sh"
+    if install_chroot_boot_logos "${PROJECT_ROOT}" "${CHROOT_DIR}"; then
+        ok "chroot 부팅 로고/Plymouth 테마 적용"
+    else
+        warn "chroot 부팅 로고 없음 — assets/aegisrescue-boot-logo-black.png 확인"
     fi
-    chroot "${CHROOT_DIR}" update-alternatives --install \
-        /usr/share/plymouth/themes/default.plymouth default.plymouth \
-        /usr/share/plymouth/themes/aegisrescue/aegisrescue.plymouth 100 2>/dev/null || true
-    chroot "${CHROOT_DIR}" update-alternatives --set default.plymouth \
-        /usr/share/plymouth/themes/aegisrescue/aegisrescue.plymouth 2>/dev/null || true
 
     # Live 부팅 설정 (live-config)
     mkdir -p "${CHROOT_DIR}/etc/live"
@@ -539,17 +526,10 @@ install_grub_fonts() {
     cp "${SCRIPT_DIR}/grub/theme.txt" \
        "${ISO_STAGE}/boot/grub/themes/aegis/" 2>/dev/null || true
 
-    # 부팅 로고/배경: 검은 배경 단일 버전만 사용
-    # shellcheck source=resolve-boot-logo.sh
-    source "${SCRIPT_DIR}/resolve-boot-logo.sh"
-    local logo_src=""
-    logo_src="$(resolve_boot_logo "${PROJECT_ROOT}" || true)"
-
-    if [[ -n "$logo_src" ]]; then
-        cp "$logo_src" "${ISO_STAGE}/boot/grub/aegis-bg.png"
-        cp "$logo_src" "${ISO_STAGE}/boot/grub/themes/aegis/aegis-bg.png" 2>/dev/null || true
-        cp "$logo_src" "${ISO_STAGE}/isolinux/splash.png" 2>/dev/null || true
-        ok "부팅 로고 적용: $(basename "$logo_src")"
+    # shellcheck source=stage-boot-logos.sh
+    source "${SCRIPT_DIR}/stage-boot-logos.sh"
+    if stage_iso_boot_logos "${PROJECT_ROOT}" "${ISO_STAGE}"; then
+        ok "부팅 로고 적용: aegisrescue-boot-logo-black.png"
     else
         warn "부팅 로고 파일을 찾지 못했습니다. AEGIS_BOOT_LOGO=/path/logo.png 지정 가능"
     fi
@@ -619,37 +599,25 @@ EOF
 create_efi_image() {
     log "EFI 부트 이미지 생성 중..."
     local efi_img="${ISO_STAGE}/EFI/BOOT/efiboot.img"
-    local efi_size=10  # MiB
 
-    dd if=/dev/zero bs=1M count=${efi_size} of="${efi_img}" 2>/dev/null
-    mkfs.vfat "${efi_img}" 2>/dev/null || {
-        warn "mkfs.vfat 실패 — EFI 이미지 생성 건너뜀"
-        return 0
-    }
-
-    # GRUB EFI 파일 복사
-    local grub_efi_dir
-    grub_efi_dir=$(find /usr/lib/grub -name "grubx64.efi" 2>/dev/null | head -1 | xargs dirname)
-
-    if [[ -z "$grub_efi_dir" ]]; then
-        # grub-mkstandalone으로 생성
-        if command -v grub-mkstandalone &>/dev/null; then
-            grub-mkstandalone \
-                --format=x86_64-efi \
-                --output="${efi_img}.efi" \
-                --locales="" \
-                --themes="" \
-                "boot/grub/grub.cfg=${SCRIPT_DIR}/grub/grub.cfg" \
-                2>/dev/null || true
-            if [[ -f "${efi_img}.efi" ]]; then
-                mmd -i "${efi_img}" ::/EFI ::/EFI/BOOT 2>/dev/null || true
-                mcopy -i "${efi_img}" "${efi_img}.efi" ::/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
-                rm -f "${efi_img}.efi"
-            fi
-        fi
+    # shellcheck source=grub-efi-standalone.sh
+    source "${SCRIPT_DIR}/grub-efi-standalone.sh"
+    if create_grub_efi_standalone "${ISO_STAGE}" "${ISO_STAGE}/boot/grub/grub.cfg" "${efi_img}"; then
+        ok "EFI 이미지 생성됨 (로고/폰트 포함)"
     else
-        mmd -i "${efi_img}" ::/EFI ::/EFI/BOOT 2>/dev/null || true
-        mcopy -i "${efi_img}" "${grub_efi_dir}/grubx64.efi" ::/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
+        local grub_efi_dir
+        grub_efi_dir=$(find /usr/lib/grub -name "grubx64.efi" 2>/dev/null | head -1 | xargs dirname)
+        dd if=/dev/zero bs=1M count=10 of="${efi_img}" 2>/dev/null
+        mkfs.vfat "${efi_img}" 2>/dev/null || {
+            warn "mkfs.vfat 실패 — EFI 이미지 생성 건너뜀"
+            return 0
+        }
+        if [[ -n "$grub_efi_dir" ]]; then
+            mmd -i "${efi_img}" ::/EFI ::/EFI/BOOT 2>/dev/null || true
+            mcopy -i "${efi_img}" "${grub_efi_dir}/grubx64.efi" ::/EFI/BOOT/BOOTX64.EFI 2>/dev/null || true
+        else
+            warn "grub-mkstandalone EFI 생성 실패"
+        fi
     fi
 
     # Secure Boot shim
