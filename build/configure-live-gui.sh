@@ -22,7 +22,7 @@ configure_live_gui() {
         libasound2t64 libssl3 \
         fonts-dejavu-core fonts-liberation fontconfig \
         fonts-noto-core fonts-noto-cjk fonts-noto-cjk-extra fonts-nanum \
-        fonts-noto-emoji fonts-noto-color-emoji \
+        fonts-noto-color-emoji \
         dbus-x11 \
         2>&1 | tail -15 || warn "일부 GUI 패키지 설치 실패"
 
@@ -47,7 +47,6 @@ configure_live_gui() {
     <family>emoji</family>
     <prefer>
       <family>Noto Color Emoji</family>
-      <family>Noto Emoji</family>
     </prefer>
   </alias>
 </fontconfig>

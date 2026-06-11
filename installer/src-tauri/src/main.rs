@@ -9,6 +9,7 @@ mod preflight;
 
 use commands::InstallerState;
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 fn main() {
     tracing_subscriber::fmt()
