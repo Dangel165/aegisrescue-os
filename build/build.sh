@@ -376,6 +376,14 @@ EOF
     chroot "${CHROOT_DIR}" update-alternatives --set default.plymouth \
         /usr/share/plymouth/themes/aegisrescue/aegisrescue.plymouth 2>/dev/null || true
 
+    # Live 부팅 설정 (live-config)
+    mkdir -p "${CHROOT_DIR}/etc/live"
+    cat > "${CHROOT_DIR}/etc/live/config.conf" <<'EOF'
+LIVE_HOSTNAME="aegisrescue"
+LIVE_USERNAME="aegis"
+LIVE_CONFIG_CMDLINE="false"
+EOF
+
     # systemd 서비스
     mkdir -p "${CHROOT_DIR}/etc/systemd/system"
     for svc in aegisd aegis-preflight aegis-update aegis-installer \
@@ -389,6 +397,10 @@ EOF
     done
 
     # 서비스 활성화
+    # shellcheck source=configure-live-console.sh
+    source "${SCRIPT_DIR}/configure-live-console.sh"
+    configure_live_console "${CHROOT_DIR}"
+
     chroot "${CHROOT_DIR}" systemctl enable aegisd.service        2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-preflight.service 2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-update.timer    2>/dev/null || true
@@ -428,6 +440,8 @@ build_iso() {
         2>&1 | tail -5
 
     ok "squashfs 생성 완료: $(du -sh "${ISO_STAGE}/live/filesystem.squashfs" | cut -f1)"
+    du -sx --block-size=1 "${CHROOT_DIR}" 2>/dev/null | cut -f1 \
+        > "${ISO_STAGE}/live/filesystem.size" || true
 
     # 커널 / initramfs 복사
     local vmlinuz initrd
@@ -556,6 +570,8 @@ install_grub_fonts() {
 setup_syslinux() {
     # shellcheck source=stage-isolinux.sh
     source "${SCRIPT_DIR}/stage-isolinux.sh"
+    # shellcheck source=configure-live-console.sh
+    source "${SCRIPT_DIR}/configure-live-console.sh"
 
     local isolinux_rc=0
     stage_isolinux_files "${ISO_STAGE}" || isolinux_rc=$?
@@ -582,27 +598,27 @@ MENU TITLE AegisRescue Beta ${VERSION}
 LABEL live
   MENU LABEL AegisRescue Live (Standard)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live quiet splash
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE}
 
 LABEL forensic
   MENU LABEL AegisRescue Forensic Mode
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live aegis.mode=forensic noswap
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} aegis.mode=forensic noswap
 
 LABEL airgap
   MENU LABEL AegisRescue Air-Gap (Network Isolated)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live aegis.mode=airgap
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} aegis.mode=airgap
 
 LABEL toram
   MENU LABEL AegisRescue RAM Boot
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live toram
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} toram
 
-LABEL safegfx
-  MENU LABEL AegisRescue Safe Graphics
+LABEL debug
+  MENU LABEL Debug (verbose)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live nomodeset xdriver=vesa
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} debug verbose systemd.log_level=debug
 EOF
 }
 

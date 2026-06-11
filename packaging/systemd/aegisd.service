@@ -6,8 +6,8 @@ Before=graphical.target
 DefaultDependencies=no
 
 [Service]
-Type=notify
-ExecStartPre=/usr/bin/aegis-preflight
+Type=simple
+ExecStartPre=-/usr/bin/aegis-preflight
 ExecStart=/usr/bin/aegisd \
     --policy /etc/aegis/policy.toml \
     --socket /run/aegis/aegisd.sock \

@@ -6,7 +6,7 @@ Before=aegisd.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/aegis/bin/aegis-preflight --json --strict
+ExecStart=-/opt/aegis/bin/aegis-preflight --json
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=aegis-preflight

@@ -19,9 +19,8 @@ copy_exec /opt/aegis/bin/aegis-preflight /bin 2>/dev/null || true
 copy_exec /sbin/nft /sbin 2>/dev/null || true
 copy_exec /sbin/nftables /sbin 2>/dev/null || true
 
-# 커널 모듈 — squashfs, aufs/overlay, crypto
-manual_add_modules squashfs overlay aufs
+# 커널 모듈 — live ISO 마운트 + squashfs 루트
+manual_add_modules iso9660 isofs udf loop squashfs overlay
 manual_add_modules dm-verity dm-integrity
 manual_add_modules aes-x86_64 sha256 sha512
 manual_add_modules ntfs3 exfat vfat
-manual_add_modules loop

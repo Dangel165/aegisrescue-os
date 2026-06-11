@@ -349,12 +349,21 @@ EOF
         clamav yara testdisk gddrescue dc3dd \
         grub2-common grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed shim-signed \
         nftables iptables bubblewrap strace \
-        live-boot live-config plymouth plymouth-themes \
+        live-boot live-config live-config-systemd casper \
+        plymouth plymouth-themes \
         2>&1 | tee "${OUT_DIR}/chroot-packages.log" | tail -20 || \
         warn "일부 선택 패키지 설치 실패. 계속 진행합니다: ${OUT_DIR}/chroot-packages.log"
 
     chroot "${CHROOT_DIR}" locale-gen ko_KR.UTF-8 en_US.UTF-8 ja_JP.UTF-8 2>/dev/null || true
     chroot "${CHROOT_DIR}" update-locale LANG=en_US.UTF-8 2>/dev/null || true
+
+    # Live 부팅 설정 (live-config)
+    mkdir -p "${CHROOT_DIR}/etc/live"
+    cat > "${CHROOT_DIR}/etc/live/config.conf" <<'EOF'
+LIVE_HOSTNAME="aegisrescue"
+LIVE_USERNAME="aegis"
+LIVE_CONFIG_CMDLINE="false"
+EOF
 
     # aegis 사용자
     chroot "${CHROOT_DIR}" useradd -m -s /bin/bash -G sudo aegis 2>/dev/null || true
@@ -860,6 +869,18 @@ populate_chroot_wsl() {
 
     wsl_mount_chroot "${CHROOT_DIR}"
 
+    # Live 부팅 패키지/설정 (기존 chroot 업데이트 시에도 적용)
+    chroot "${CHROOT_DIR}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
+        apt-get install -y --no-install-recommends \
+        live-config-systemd casper 2>/dev/null || \
+        warn "live-config-systemd 설치 실패 — apt update 후 재시도"
+    mkdir -p "${CHROOT_DIR}/etc/live"
+    cat > "${CHROOT_DIR}/etc/live/config.conf" <<'EOF'
+LIVE_HOSTNAME="aegisrescue"
+LIVE_USERNAME="aegis"
+LIVE_CONFIG_CMDLINE="false"
+EOF
+
     # Aegis 도구
     mkdir -p "${CHROOT_DIR}/opt/aegis/bin"
     if [[ -d "${TOOLS_DIR}" ]]; then
@@ -952,6 +973,10 @@ EOF
         2>/dev/null || true
 
     # 서비스 활성화
+    # shellcheck source=configure-live-console.sh
+    source "${WSL_HOME}/build/configure-live-console.sh"
+    configure_live_console "${CHROOT_DIR}"
+
     chroot "${CHROOT_DIR}" systemctl enable aegisd.service 2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-preflight.service 2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-update.timer 2>/dev/null || true
@@ -988,6 +1013,8 @@ build_iso_wsl() {
     local sq_size
     sq_size=$(du -sh "${ISO_STAGE}/live/filesystem.squashfs" | cut -f1)
     ok "squashfs: ${sq_size}"
+    du -sx --block-size=1 "${CHROOT_DIR}" 2>/dev/null | cut -f1 \
+        > "${ISO_STAGE}/live/filesystem.size" || true
 
     du -s --block-size=1 "${CHROOT_DIR}" | cut -f1 \
         > "${ISO_STAGE}/live/filesystem.size"
@@ -1103,6 +1130,8 @@ build_iso_wsl() {
 setup_syslinux_wsl() {
     # shellcheck source=stage-isolinux.sh
     source "${WSL_HOME}/build/stage-isolinux.sh"
+    # shellcheck source=configure-live-console.sh
+    source "${WSL_HOME}/build/configure-live-console.sh"
 
     local isolinux_rc=0
     stage_isolinux_files "${ISO_STAGE}" || isolinux_rc=$?
@@ -1126,15 +1155,19 @@ MENU TITLE AegisRescue Beta ${VERSION}
 LABEL live
   MENU LABEL AegisRescue Live
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live quiet splash
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE}
 LABEL forensic
   MENU LABEL Forensic Mode
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live aegis.mode=forensic noswap
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} aegis.mode=forensic noswap
 LABEL airgap
   MENU LABEL Air-Gap Mode
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img boot=live aegis.mode=airgap
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} aegis.mode=airgap
+LABEL debug
+  MENU LABEL Debug (verbose)
+  KERNEL /boot/vmlinuz
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} debug verbose systemd.log_level=debug
 EOF
 }
 
