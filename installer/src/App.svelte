@@ -161,6 +161,7 @@
     color: #e6edf3;
     height: 100vh;
     overflow: hidden;
+    color-scheme: dark;
   }
 
   .installer-root {
@@ -420,14 +421,31 @@
   }
 
   :global(select) {
-    background: #0d1117;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    color-scheme: dark;
+    background-color: #0d1117;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238b949e' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
     border: 1px solid #30363d;
     border-radius: 6px;
     color: #e6edf3;
-    padding: 8px 12px;
+    padding: 8px 36px 8px 12px;
     font-size: 14px;
     width: 100%;
     outline: none;
+    cursor: pointer;
+  }
+
+  :global(select:focus) {
+    border-color: #58a6ff;
+  }
+
+  :global(select option) {
+    background-color: #161b22;
+    color: #e6edf3;
   }
 
   :global(label) {
