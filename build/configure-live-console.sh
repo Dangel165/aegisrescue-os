@@ -31,16 +31,20 @@ fi
 EOF
 
     cat > "${chroot}/home/aegis/.bash_profile" <<'EOF'
-if [ -f /etc/motd-aegis ]; then cat /etc/motd-aegis; fi
-if [ -f /etc/profile.d/aegis-boot-hint.sh ]; then . /etc/profile.d/aegis-boot-hint.sh; fi
-echo ""
-echo "  Boot mode: ${_AEGIS_BOOT:-unknown}"
+# GUI Live: startx runs from /etc/profile.d/aegis-start-gui.sh before this file.
 if grep -Eq '(^| )aegis\.cli=1($| )' /proc/cmdline 2>/dev/null; then
-    echo "  CLI: aegis | aegis-installer | aegiscenter (manual, needs X)"
-else
-    echo "  GUI: Alt+F7  |  CLI: Alt+F1  |  aegiscenter | aegis-installer"
+    if [ -f /etc/motd-aegis ]; then cat /etc/motd-aegis; fi
+    if [ -f /etc/profile.d/aegis-boot-hint.sh ]; then . /etc/profile.d/aegis-boot-hint.sh; fi
+    echo ""
+    echo "  Boot mode: ${_AEGIS_BOOT:-CLI}"
+    echo "  Commands: aegis | aegis-installer | aegiscenter (needs: startx)"
+    echo ""
+elif [ -z "${DISPLAY:-}" ] && [ -f /tmp/aegis-startx.log ]; then
+    echo ""
+    echo "  GUI start failed — log: /tmp/aegis-startx.log"
+    echo "  Fallback: Alt+F2 for CLI  |  retry: startx"
+    echo ""
 fi
-echo ""
 EOF
     cp "${chroot}/home/aegis/.bash_profile" "${chroot}/etc/skel/.bash_profile"
     chroot "${chroot}" chown aegis:aegis /home/aegis/.bash_profile 2>/dev/null || true
@@ -49,7 +53,7 @@ EOF
 
   AegisRescue Beta 0.1.0 — Live Recovery OS
   Boot menu: Live (GUI+Installer) | CLI Mode | Forensic | Air-Gap
-  User: aegis (auto-login tty1)  |  GUI session: Alt+F7
+  GUI Live: X on tty1  |  Fallback CLI: Alt+F2  |  startx log: /tmp/aegis-startx.log
 
 EOF
 
@@ -58,7 +62,7 @@ EOF
 }
 
 # Shared kernel cmdline fragments (keep in sync with build/grub/grub.cfg live_base).
-LIVE_KERNEL_BASE="boot=live components live-media-path=/live nomodeset console=tty1 plymouth.enable=0"
+LIVE_KERNEL_BASE="boot=live components live-media-path=/live nomodeset xdriver=vesa console=tty1 plymouth.enable=0"
 LIVE_KERNEL_CLI="${LIVE_KERNEL_BASE} aegis.cli=1 systemd.unit=multi-user.target"
 LIVE_KERNEL_FORENSIC="${LIVE_KERNEL_BASE} aegis.mode=forensic noswap aegis.cli=1 systemd.unit=multi-user.target"
 LIVE_KERNEL_AIRGAP="${LIVE_KERNEL_BASE} aegis.mode=airgap aegis.cli=1 systemd.unit=multi-user.target"
