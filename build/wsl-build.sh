@@ -17,7 +17,7 @@
 #
 # 옵션:
 #   --setup          WSL 환경 초기 설정 (한 번만 실행)
-#   --copy           Windows 파일을 WSL 홈으로 복사
+#   --copy           Windows 파일을 WSL 홈으로 복사 (sudo 불필요)
 #   --arch ARCH      x86_64 | aarch64 (기본: x86_64)
 #   --ver  VERSION   버전 (기본: 0.1.0)
 #   --jobs N         병렬 빌드 수 (기본: nproc)
@@ -34,14 +34,8 @@ ARCH="${ARCH:-x86_64}"
 VERSION="${VERSION:-0.1.0}"
 RELEASE="${RELEASE:-beta}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
-WSL_HOME="${HOME}/aegisrescue"
 WIN_SRC="/mnt/f/ofntkd/aegisrescue"   # Windows 소스 경로 (마운트 경로)
-OUT_DIR="${WSL_HOME}/build/out"
-CHROOT_DIR="${WSL_HOME}/build/chroot"
-ISO_STAGE="${WSL_HOME}/build/iso-stage"
-TOOLS_DIR="${WSL_HOME}/build/tools"
 ISO_BASENAME="aegisrescue-${RELEASE}-${VERSION}-${ARCH}"
-ISO_NAME="${OUT_DIR}/${ISO_BASENAME}.iso"
 ISO_LABEL="AegisRescue Beta ${VERSION}"
 
 DO_SETUP=0; DO_COPY=0; SKIP_RUST=0; SKIP_GUI=0
@@ -50,6 +44,26 @@ SKIP_BASE=0; ISO_ONLY=0; QEMU_TEST=0
 # Never allow apt/debconf packages such as tzdata to stop the build.
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 export TZ="${TZ:-Etc/UTC}"
+
+resolve_wsl_paths() {
+    local base_home="${HOME}"
+    if [[ -n "${AEGIS_WSL_HOME:-}" ]]; then
+        WSL_HOME="${AEGIS_WSL_HOME}"
+    elif [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        base_home=$(getent passwd "${SUDO_USER}" | cut -d: -f6)
+        [[ -n "${base_home}" ]] || base_home="/home/${SUDO_USER}"
+        WSL_HOME="${base_home}/aegisrescue"
+    else
+        WSL_HOME="${base_home}/aegisrescue"
+    fi
+    OUT_DIR="${WSL_HOME}/build/out"
+    CHROOT_DIR="${WSL_HOME}/build/chroot"
+    ISO_STAGE="${WSL_HOME}/build/iso-stage"
+    TOOLS_DIR="${WSL_HOME}/build/tools"
+    ISO_NAME="${OUT_DIR}/${ISO_BASENAME}.iso"
+}
+
+resolve_wsl_paths
 
 # ─── 색상 ──────────────────────────────────────────────────────
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
@@ -219,7 +233,7 @@ EOF
     echo ""
     echo -e "${Y}다음 단계:${N}"
     echo "  1. WSL 재시작: PowerShell에서 → wsl --shutdown && wsl"
-    echo "  2. 소스 복사:  sudo bash build/wsl-build.sh --copy"
+    echo "  2. 소스 복사:  bash build/wsl-build.sh --copy"
     echo "  3. 전체 빌드:  sudo bash build/wsl-build.sh"
 }
 
@@ -232,6 +246,9 @@ copy_source() {
     fi
 
     log "복사 중: ${WIN_SRC} → ${WSL_HOME}"
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        log "sudo 감지 — ${SUDO_USER} 홈으로 복사 (${WSL_HOME})"
+    fi
     log "참고: Windows 파일시스템(/mnt/f/)은 빌드 속도가 느려 WSL 홈으로 복사합니다"
 
     mkdir -p "${WSL_HOME}"
@@ -245,8 +262,12 @@ copy_source() {
         --exclude='*.o' \
         "${WIN_SRC}/" "${WSL_HOME}/"
 
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        chown -R "${SUDO_USER}:${SUDO_USER}" "${WSL_HOME}"
+    fi
+
     ok "복사 완료: ${WSL_HOME}"
-    ok "총 크기: $(du -sh "${WSL_HOME}" | cut -f1)"
+    ok "총 크기: $(du -sh "${WSL_HOME}" 2>/dev/null | cut -f1 || echo '?')"
 
     # 스크립트 실행 권한 설정
     chmod +x "${WSL_HOME}/build/build.sh" \
@@ -1256,6 +1277,9 @@ main() {
 
     detect_wsl
     [[ $EUID -eq 0 ]] || err "ISO 빌드는 root 권한 필요: sudo bash build/wsl-build.sh"
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        log "빌드 디렉터리: ${WSL_HOME} (사용자: ${SUDO_USER})"
+    fi
 
     mkdir -p "${OUT_DIR}"
     trap 'wsl_umount_chroot "${CHROOT_DIR}" 2>/dev/null || true' EXIT
