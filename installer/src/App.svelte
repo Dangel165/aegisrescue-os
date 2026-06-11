@@ -1,6 +1,10 @@
 <script lang="ts">
-  import { currentStep, config } from './store'
-  import { t, currentLang, setLanguage } from './i18n'
+  import { get } from 'svelte/store'
+  import { onMount } from 'svelte'
+  import { listen } from '@tauri-apps/api/event'
+  import { invoke } from '@tauri-apps/api/tauri'
+  import { currentStep } from './store'
+  import { t, currentLang } from './i18n'
   import LanguageStep   from './steps/LanguageStep.svelte'
   import WelcomeStep    from './steps/WelcomeStep.svelte'
   import PreflightStep  from './steps/PreflightStep.svelte'
@@ -14,6 +18,9 @@
 
   import { STEPS } from './store'
 
+  let showCloseModal = false
+  let showBlockedModal = false
+
   $: stepIndex = STEPS.indexOf($currentStep)
   $: showSidebar = !['language', 'installing', 'done'].includes($currentStep)
   $: showSteps = ['preflight', 'license', 'components', 'disk', 'options', 'confirm']
@@ -23,6 +30,33 @@
     const labels = $t as Record<string, string>
     return labels[`step_${step}`] ?? step
   }
+
+  function dismissCloseModal() {
+    showCloseModal = false
+  }
+
+  function dismissBlockedModal() {
+    showBlockedModal = false
+  }
+
+  async function confirmReboot() {
+    showCloseModal = false
+    await invoke('reboot_system')
+  }
+
+  onMount(() => {
+    let unlisten: (() => void) | undefined
+    listen('close-requested', () => {
+      if (get(currentStep) === 'installing') {
+        showBlockedModal = true
+        return
+      }
+      showCloseModal = true
+    }).then((fn) => {
+      unlisten = fn
+    })
+    return () => unlisten?.()
+  })
 </script>
 
 <main class="installer-root" data-lang={$currentLang}>
@@ -82,6 +116,37 @@
     {/if}
   </div>
 </main>
+
+{#if showCloseModal}
+  <div class="modal-backdrop" role="presentation" on:click={dismissCloseModal} on:keydown={() => {}}>
+    <div class="modal-card" role="dialog" aria-modal="true" on:click|stopPropagation={() => {}}>
+      <h2 class="modal-title">{$t.close_reboot_title}</h2>
+      <p class="modal-message">{$t.close_reboot_message}</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" on:click={dismissCloseModal}>
+          {$t.close_reboot_no}
+        </button>
+        <button class="btn btn-primary" on:click={confirmReboot}>
+          {$t.close_reboot_yes}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showBlockedModal}
+  <div class="modal-backdrop" role="presentation" on:click={dismissBlockedModal} on:keydown={() => {}}>
+    <div class="modal-card" role="dialog" aria-modal="true" on:click|stopPropagation={() => {}}>
+      <h2 class="modal-title">{$t.close_blocked_title}</h2>
+      <p class="modal-message">{$t.close_blocked_message}</p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" on:click={dismissBlockedModal}>
+          {$t.close_reboot_no}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   :global(*) {
@@ -374,5 +439,45 @@
 
   :global(.form-group) {
     margin-bottom: 20px;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(1, 4, 9, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .modal-card {
+    width: min(420px, 100%);
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 24px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  }
+
+  .modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e6edf3;
+    margin-bottom: 10px;
+  }
+
+  .modal-message {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #8b949e;
+    margin-bottom: 22px;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
   }
 </style>

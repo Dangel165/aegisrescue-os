@@ -7,6 +7,13 @@ export const ja = {
   install: 'インストール',
   close: '閉じる',
 
+  close_reboot_title: 'インストーラーを終了',
+  close_reboot_message: 'インストーラーを終了します。システムを再起動しますか？',
+  close_reboot_yes: '再起動',
+  close_reboot_no: '続ける',
+  close_blocked_title: 'インストール中',
+  close_blocked_message: 'インストールが完了するまで終了できません。',
+
   step_language: '言語',
   step_welcome: 'ようこそ',
   step_license: 'ライセンス',

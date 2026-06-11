@@ -16,6 +16,18 @@ fn main() {
         .init();
 
     tauri::Builder::default()
+        .setup(|app| {
+            if let Some(window) = app.get_window("main") {
+                let _ = window.set_minimizable(false);
+            }
+            Ok(())
+        })
+        .on_window_event(|event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event.event() {
+                api.prevent_close();
+                let _ = event.window().emit("close-requested", ());
+            }
+        })
         .manage(InstallerState(Arc::new(Mutex::new(None))))
         .invoke_handler(tauri::generate_handler![
             // 시스템 점검

@@ -11,8 +11,8 @@
     await invoke('open_aegiscenter')
   }
 
-  function continueLive() {
-    window.close()
+  async function continueLive() {
+    await openCenter()
   }
 </script>
 

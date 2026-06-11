@@ -7,6 +7,13 @@ export const en = {
   install: 'Install',
   close: 'Close',
 
+  close_reboot_title: 'Close Installer',
+  close_reboot_message: 'You are closing the installer. Would you like to reboot the system?',
+  close_reboot_yes: 'Reboot',
+  close_reboot_no: 'Continue',
+  close_blocked_title: 'Installation in Progress',
+  close_blocked_message: 'The installer cannot be closed until installation finishes.',
+
   step_language: 'Language',
   step_welcome: 'Welcome',
   step_license: 'License',

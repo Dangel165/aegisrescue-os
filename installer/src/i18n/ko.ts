@@ -7,6 +7,13 @@ export const ko = {
   install: '설치',
   close: '닫기',
 
+  close_reboot_title: '설치 프로그램 종료',
+  close_reboot_message: '설치 프로그램을 종료합니다. 시스템을 재부팅하시겠습니까?',
+  close_reboot_yes: '재부팅',
+  close_reboot_no: '계속 사용',
+  close_blocked_title: '설치 진행 중',
+  close_blocked_message: '설치가 완료될 때까지 종료할 수 없습니다.',
+
   step_language: '언어',
   step_welcome: '시작',
   step_license: '라이선스',
