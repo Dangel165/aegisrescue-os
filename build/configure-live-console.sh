@@ -66,9 +66,11 @@ EOF
 }
 
 # Shared kernel cmdline (keep in sync with build/grub/grub.cfg).
-LIVE_KERNEL_COMMON="boot=live components live-media-path=/live nomodeset xdriver=vesa console=tty1"
+# GUI Live: no nomodeset — VirtualBox VMSVGA needs vmwgfx/KMS for Plymouth + Xorg.
+LIVE_KERNEL_COMMON="boot=live components live-media-path=/live console=tty1"
+LIVE_KERNEL_SAFE="boot=live components live-media-path=/live nomodeset xdriver=vesa console=tty1"
 LIVE_KERNEL_GUI="${LIVE_KERNEL_COMMON} splash quiet"
-LIVE_KERNEL_CLI="${LIVE_KERNEL_COMMON} aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
-LIVE_KERNEL_FORENSIC="${LIVE_KERNEL_COMMON} aegis.mode=forensic noswap aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
-LIVE_KERNEL_AIRGAP="${LIVE_KERNEL_COMMON} aegis.mode=airgap aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
+LIVE_KERNEL_CLI="${LIVE_KERNEL_SAFE} aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
+LIVE_KERNEL_FORENSIC="${LIVE_KERNEL_SAFE} aegis.mode=forensic noswap aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
+LIVE_KERNEL_AIRGAP="${LIVE_KERNEL_SAFE} aegis.mode=airgap aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
 LIVE_KERNEL_BASE="${LIVE_KERNEL_GUI}"

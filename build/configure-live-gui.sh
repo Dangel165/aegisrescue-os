@@ -7,8 +7,10 @@ configure_live_gui() {
 
     chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
         apt-get install -y --no-install-recommends \
-        xserver-xorg-core xserver-xorg xserver-xorg-legacy xserver-xorg-video-vesa \
-        xserver-xorg-video-fbdev xserver-xorg-video-all \
+        xserver-xorg-core xserver-xorg xserver-xorg-legacy \
+        xserver-xorg-video-vesa xserver-xorg-video-fbdev \
+        xserver-xorg-video-vmware xserver-xorg-video-modesetting \
+        xserver-xorg-video-all \
         xserver-xorg-input-libinput \
         x11-xserver-utils x11-xkb-utils xauth xinit x11-common \
         openbox obconf nitrogen \
@@ -19,17 +21,14 @@ configure_live_gui() {
         fonts-dejavu-core fontconfig dbus-x11 \
         2>&1 | tail -15 || warn "일부 GUI 패키지 설치 실패"
 
-    # VirtualBox/VM: prefer VESA driver (nomodeset + xdriver=vesa on cmdline)
-    mkdir -p "${chroot}/etc/X11/xorg.conf.d"
-    cat > "${chroot}/etc/X11/xorg.conf.d/99-aegis-vm.conf" <<'EOF'
-Section "Device"
-    Identifier "Device0"
-    Driver     "vesa"
-EndSection
-Section "Screen"
-    Identifier "Screen0"
-    Device     "Device0"
-EndSection
+    # VirtualBox/VM: let Xorg auto-pick vmware/modesetting (VMSVGA). VESA only via aegis-startx fallback.
+    rm -f "${chroot}/etc/X11/xorg.conf.d/99-aegis-vm.conf" 2>/dev/null || true
+
+    mkdir -p "${chroot}/etc/modules-load.d"
+    cat > "${chroot}/etc/modules-load.d/aegis-vm-gfx.conf" <<'EOF'
+# VirtualBox VMSVGA / VMware — needed when GUI Live boot omits nomodeset
+vmwgfx
+drm_kms_helper
 EOF
 
     mkdir -p "${chroot}/etc/X11"
@@ -93,7 +92,7 @@ install_live_gui_scripts() {
     local project_root="$2"
 
     mkdir -p "${chroot}/opt/aegis/bin"
-    for script in aegis-live-autostart.sh aegis-xsession.sh; do
+    for script in aegis-live-autostart.sh aegis-xsession.sh aegis-startx.sh; do
         cp "${project_root}/packaging/scripts/${script}" \
            "${chroot}/opt/aegis/bin/${script}"
         chmod 755 "${chroot}/opt/aegis/bin/${script}"

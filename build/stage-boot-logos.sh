@@ -48,6 +48,7 @@ install_chroot_boot_logos() {
     logo_src="$(resolve_boot_logo "${project_root}" || true)"
     [[ -n "$logo_src" ]] || return 1
 
+    local logo_svg="${project_root}/docs/assets/aegisrescue-logo.svg"
     mkdir -p "${chroot}/usr/share/plymouth/themes/aegisrescue"
     cp "${project_root}/build/plymouth/aegisrescue.plymouth" \
        "${chroot}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
@@ -56,6 +57,9 @@ install_chroot_boot_logos() {
     cp "$logo_src" "${chroot}/usr/share/plymouth/themes/aegisrescue/aegis-bg.png"
     mkdir -p "${chroot}/usr/share/aegis"
     cp "$logo_src" "${chroot}/usr/share/aegis/aegisrescue-boot-logo.png"
+    # Plymouth initramfs: smaller PNG loads reliably on VM framebuffers
+    prepare_menu_splash_png "$logo_src" \
+        "${chroot}/usr/share/plymouth/themes/aegisrescue/aegis-bg.png" "$logo_svg"
 
     mkdir -p "${chroot}/etc/plymouth"
     cat > "${chroot}/etc/plymouth/plymouthd.conf" <<'EOF'
