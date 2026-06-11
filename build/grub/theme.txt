@@ -5,18 +5,17 @@ title-text: "AegisRescue Linux"
 title-color: "#ffffff"
 title-font: "Sans Bold 20"
 
-desktop-color: "#1a1a1a"
-desktop-image: "aegis-bg.png"
+desktop-color: "#2a2a2a"
 
 message-color: "#ffffff"
 message-bg-color: "#111111"
 
 # Menu style
 + boot_menu {
-    left   = 18%
-    top    = 52%
-    width  = 70%
-    height = 34%
+    left   = 10%
+    top    = 28%
+    width  = 80%
+    height = 50%
 
     item_font  = "Sans 14"
     item_color = "#e0e0e0"

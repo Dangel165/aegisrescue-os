@@ -350,6 +350,7 @@ EOF
         apt-get install -y --no-install-recommends \
         pciutils usbutils ntfs-3g exfat-fuse hfsplus hfsutils btrfs-progs \
         xfsprogs dosfstools parted gdisk fdisk \
+        squashfs-tools rsync \
         clamav yara testdisk gddrescue dc3dd \
         grub2-common grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed shim-signed \
         nftables iptables bubblewrap strace \

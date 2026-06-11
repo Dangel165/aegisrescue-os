@@ -279,9 +279,20 @@ impl Installer {
                 error: None,
             });
 
-            run_command("unsquashfs", &["-f", "-d", mount_root, squashfs.to_str().unwrap()])
-                .await
-                .map_err(|e| anyhow::anyhow!("unsquashfs 실패: {}", e))?;
+            if is_tool_available("unsquashfs") {
+                run_command("unsquashfs", &["-f", "-d", mount_root, squashfs.to_str().unwrap()])
+                    .await
+                    .map_err(|e| anyhow::anyhow!("unsquashfs 실패: {}", e))?;
+            } else {
+                tracing::warn!("unsquashfs not found — rsync fallback");
+                progress_cb(InstallProgress {
+                    phase: InstallPhase::CopyingFiles,
+                    percent: 42,
+                    message: "unsquashfs 없음 — Live 시스템에서 rsync 복사 중...".into(),
+                    error: None,
+                });
+                copy_live_root_with_rsync(mount_root).await?;
+            }
         } else {
             tracing::warn!("live squashfs not found — rsync fallback from /");
             progress_cb(InstallProgress {
@@ -291,22 +302,7 @@ impl Installer {
                 error: None,
             });
 
-            run_command(
-                "rsync",
-                &[
-                    "-aHAX",
-                    "--exclude=/proc/*",
-                    "--exclude=/sys/*",
-                    "--exclude=/dev/*",
-                    "--exclude=/run/*",
-                    "--exclude=/mnt/*",
-                    "--exclude=/tmp/*",
-                    "/",
-                    mount_root,
-                ],
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("rsync 실패: {}", e))?;
+            copy_live_root_with_rsync(mount_root).await?;
         }
 
         ensure_mounted_root(mount_root)?;
@@ -554,6 +550,25 @@ fn resolve_live_squashfs() -> Option<PathBuf> {
         .map(|p| p.to_path_buf())
 }
 
+async fn copy_live_root_with_rsync(mount_root: &str) -> anyhow::Result<()> {
+    run_command(
+        "rsync",
+        &[
+            "-aHAX",
+            "--exclude=/proc/*",
+            "--exclude=/sys/*",
+            "--exclude=/dev/*",
+            "--exclude=/run/*",
+            "--exclude=/mnt/*",
+            "--exclude=/tmp/*",
+            "/",
+            mount_root,
+        ],
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("rsync 실패: {}", e))
+}
+
 async fn run_command(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
     let status = tokio::process::Command::new(cmd)
         .args(args)
@@ -576,4 +591,12 @@ fn ensure_mounted_root(root: &str) -> anyhow::Result<()> {
         "설치 대기 경로에 시스템이 없습니다 ({etc}). \
          파티션 마운트 또는 squashfs 추출이 실패했을 수 있습니다."
     ))
+}
+
+fn is_tool_available(tool: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(tool)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }

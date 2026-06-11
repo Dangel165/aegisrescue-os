@@ -30,7 +30,8 @@ create_grub_efi_standalone() {
         --format=x86_64-efi \
         --output="${efi_tmp}" \
         --locales="" \
-        --themes="" \
+        --fonts="" \
+        --modules="gfxterm gfxmenu png all_video" \
         "${embed[@]}" 2>/dev/null; then
         rm -f "${efi_tmp}"
         return 1
