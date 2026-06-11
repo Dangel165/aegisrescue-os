@@ -95,7 +95,10 @@ EOF
     chroot "${chroot}" systemctl set-default graphical.target 2>/dev/null || true
     chroot "${chroot}" systemctl unmask lightdm.service 2>/dev/null || true
     chroot "${chroot}" systemctl enable lightdm.service 2>/dev/null || true
-    chroot "${chroot}" systemctl enable aegis-installer.service 2>/dev/null || true
+
+    # Installer runs from Openbox autostart (user session). System unit cannot access :0 → restart loop.
+    chroot "${chroot}" systemctl disable aegis-installer.service 2>/dev/null || true
+    chroot "${chroot}" systemctl mask aegis-installer.service 2>/dev/null || true
 
     # Plymouth handoff to LightDM (like Ubuntu)
     chroot "${chroot}" systemctl unmask plymouth-quit-wait.service 2>/dev/null || true
@@ -118,26 +121,11 @@ install_live_gui_scripts() {
     done
 
     mkdir -p "${chroot}/home/aegis/.config/openbox" \
-             "${chroot}/home/aegis/.config/autostart" \
-             "${chroot}/etc/skel/.config/openbox" \
-             "${chroot}/etc/skel/.config/autostart"
+             "${chroot}/etc/skel/.config/openbox"
     ln -sf /opt/aegis/bin/aegis-live-autostart.sh \
         "${chroot}/home/aegis/.config/openbox/autostart"
     ln -sf /opt/aegis/bin/aegis-live-autostart.sh \
         "${chroot}/etc/skel/.config/openbox/autostart"
-
-    cat > "${chroot}/home/aegis/.config/autostart/aegis-installer.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=AegisRescue Installer
-Comment=Install AegisRescue to disk or USB
-Exec=/opt/aegis/bin/aegis-installer
-Terminal=false
-Hidden=false
-X-GNOME-Autostart-enabled=true
-EOF
-    cp "${chroot}/home/aegis/.config/autostart/aegis-installer.desktop" \
-       "${chroot}/etc/skel/.config/autostart/aegis-installer.desktop"
 
     chroot "${chroot}" chown -R aegis:aegis /home/aegis 2>/dev/null || true
 }

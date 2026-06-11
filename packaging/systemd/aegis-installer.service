@@ -1,5 +1,5 @@
 [Unit]
-Description=AegisRescue Installer Wizard
+Description=AegisRescue Installer Wizard (installed systems only — masked on Live ISO)
 Documentation=https://aegisrescue.io/docs/installer
 After=display-manager.service
 ConditionPathExists=!/var/lib/aegis/.installed
@@ -10,11 +10,10 @@ Type=simple
 User=aegis
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/aegis/.Xauthority
+ExecStartPre=/bin/sh -c 'test -S /tmp/.X11-unix/X0'
 ExecStartPre=/bin/sh -c '! pgrep -x aegis-installer >/dev/null 2>&1'
-ExecStartPre=/bin/sleep 4
 ExecStart=/opt/aegis/bin/aegis-installer
-Restart=on-failure
-RestartSec=3
+Restart=no
 StandardOutput=append:/tmp/aegis-installer.log
 StandardError=append:/tmp/aegis-installer.log
 SyslogIdentifier=aegis-installer
