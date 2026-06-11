@@ -59,9 +59,11 @@
     }
   }
 
-  function canContinue() {
-    return result && result.errors.length === 0
+  function hasBlockingFailures(r: PreflightResult): boolean {
+    return r.checks.some((c) => c.status === 'Fail' && c.required)
   }
+
+  $: canProceed = result != null && !hasBlockingFailures(result)
 
   function next() {
     currentStep.set('license')
@@ -120,7 +122,7 @@
 
   <div class="step-actions">
     <button class="btn btn-secondary" on:click={back}>← {$t.back}</button>
-    <button class="btn btn-primary" on:click={next} disabled={!canContinue()}>
+    <button class="btn btn-primary" on:click={next} disabled={!canProceed}>
       {$t.next} →
     </button>
   </div>
