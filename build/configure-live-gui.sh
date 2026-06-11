@@ -63,6 +63,8 @@ EOF
     chroot "${chroot}" systemctl set-default multi-user.target 2>/dev/null || true
     chroot "${chroot}" systemctl disable lightdm.service 2>/dev/null || true
     chroot "${chroot}" systemctl mask lightdm.service 2>/dev/null || true
+
+    chroot "${chroot}" plymouth-set-default-theme aegisrescue 2>/dev/null || true
 }
 
 install_live_gui_scripts() {

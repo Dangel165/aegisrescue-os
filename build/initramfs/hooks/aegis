@@ -24,3 +24,18 @@ manual_add_modules iso9660 isofs udf loop squashfs overlay
 manual_add_modules dm-verity dm-integrity
 manual_add_modules aes-x86_64 sha256 sha512
 manual_add_modules ntfs3 exfat vfat
+
+# Plymouth boot splash theme (early boot logo)
+if [ -d /usr/share/plymouth/themes/aegisrescue ]; then
+    mkdir -p "$DESTDIR/usr/share/plymouth/themes/aegisrescue"
+    cp -a /usr/share/plymouth/themes/aegisrescue/. "$DESTDIR/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
+fi
+if [ -f /etc/alternatives/default.plymouth ]; then
+    target="$(readlink -f /etc/alternatives/default.plymouth 2>/dev/null || true)"
+    if [ -n "$target" ] && [ -d "$(dirname "$target")" ]; then
+        theme_dir="$(dirname "$target")"
+        theme_name="$(basename "$theme_dir")"
+        mkdir -p "$DESTDIR/usr/share/plymouth/themes/${theme_name}"
+        cp -a "${theme_dir}/." "$DESTDIR/usr/share/plymouth/themes/${theme_name}/" 2>/dev/null || true
+    fi
+fi

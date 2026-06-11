@@ -566,6 +566,7 @@ install_grub_fonts() {
     if [[ -n "$logo_src" ]]; then
         cp "$logo_src" "${ISO_STAGE}/boot/grub/aegis-bg.png"
         cp "$logo_src" "${ISO_STAGE}/boot/grub/themes/aegis/aegis-bg.png" 2>/dev/null || true
+        cp "$logo_src" "${ISO_STAGE}/isolinux/splash.png" 2>/dev/null || true
         ok "부팅 로고 적용: $(basename "$logo_src")"
     else
         warn "부팅 로고 파일을 찾지 못했습니다. AEGIS_BOOT_LOGO=/path/logo.png 지정 가능"
@@ -599,11 +600,12 @@ DEFAULT vesamenu.c32
 TIMEOUT 100
 PROMPT 0
 MENU TITLE AegisRescue Beta ${VERSION}
+MENU BACKGROUND splash.png
 
 LABEL live
   MENU LABEL AegisRescue Live (GUI + Installer)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE}
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_GUI}
 
 LABEL cli
   MENU LABEL AegisRescue CLI Mode (Text Console)
@@ -623,12 +625,12 @@ LABEL airgap
 LABEL toram
   MENU LABEL AegisRescue RAM Boot
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} toram
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_GUI} toram
 
 LABEL debug
   MENU LABEL Debug (verbose)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} debug verbose systemd.log_level=debug
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_COMMON} debug verbose systemd.log_level=debug
 EOF
 }
 

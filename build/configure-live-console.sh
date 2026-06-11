@@ -63,8 +63,10 @@ EOF
     chroot "${chroot}" systemctl mask plymouth-quit-wait.service 2>/dev/null || true
 }
 
-# Shared kernel cmdline fragments (keep in sync with build/grub/grub.cfg live_base).
-LIVE_KERNEL_BASE="boot=live components live-media-path=/live nomodeset xdriver=vesa console=tty1 plymouth.enable=0"
-LIVE_KERNEL_CLI="${LIVE_KERNEL_BASE} aegis.cli=1 systemd.unit=multi-user.target"
-LIVE_KERNEL_FORENSIC="${LIVE_KERNEL_BASE} aegis.mode=forensic noswap aegis.cli=1 systemd.unit=multi-user.target"
-LIVE_KERNEL_AIRGAP="${LIVE_KERNEL_BASE} aegis.mode=airgap aegis.cli=1 systemd.unit=multi-user.target"
+# Shared kernel cmdline (keep in sync with build/grub/grub.cfg).
+LIVE_KERNEL_COMMON="boot=live components live-media-path=/live nomodeset xdriver=vesa console=tty1"
+LIVE_KERNEL_GUI="${LIVE_KERNEL_COMMON} splash quiet"
+LIVE_KERNEL_CLI="${LIVE_KERNEL_COMMON} aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
+LIVE_KERNEL_FORENSIC="${LIVE_KERNEL_COMMON} aegis.mode=forensic noswap aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
+LIVE_KERNEL_AIRGAP="${LIVE_KERNEL_COMMON} aegis.mode=airgap aegis.cli=1 systemd.unit=multi-user.target plymouth.enable=0"
+LIVE_KERNEL_BASE="${LIVE_KERNEL_GUI}"

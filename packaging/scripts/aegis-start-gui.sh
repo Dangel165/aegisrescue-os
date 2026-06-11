@@ -12,6 +12,10 @@ command -v startx >/dev/null 2>&1 || return 0
 mkdir -p "${HOME}/.cache/aegis"
 touch "${AEGIS_GUI_STAMP}"
 
+if command -v plymouth >/dev/null 2>&1; then
+    plymouth quit 2>/dev/null || true
+fi
+
 # Log failures: cat /tmp/aegis-startx.log on tty2
 exec startx /opt/aegis/bin/aegis-xsession -- vt1 -- \
     -nolisten tcp -noreset +extension GLX +extension RANDR +extension RENDER \
