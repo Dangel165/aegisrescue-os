@@ -53,7 +53,8 @@ if ($QemuTest)    { $argParts += "--qemu-test" }
 if ($Setup)       { $argParts = @("--setup") }
 
 $argStr = $argParts -join " "
-$isoPath = "$ProjectRoot\build\out\aegisrescue-$Version-$Arch.iso"
+$Release = "beta"
+$isoPath = "$ProjectRoot\build\out\aegisrescue-$Release-$Version-$Arch.iso"
 
 Write-Host ""
 Write-Host "  AegisRescue WSL Build" -ForegroundColor Blue
@@ -96,7 +97,7 @@ if (Test-Path $isoPath) {
     Write-Host ""
     Write-Host "  Next steps:" -ForegroundColor White
     Write-Host "  - Flash to USB : use Rufus or balenaEtcher" -ForegroundColor DarkGray
-    Write-Host "  - QEMU test    : wsl -- qemu-system-x86_64 -m 2G -cdrom '$UnixPath/build/out/aegisrescue-$Version-$Arch.iso' -boot d -vga std" -ForegroundColor DarkGray
+    Write-Host "  - QEMU test    : wsl -- qemu-system-x86_64 -m 2G -cdrom '$UnixPath/build/out/aegisrescue-$Release-$Version-$Arch.iso' -boot d -vga std" -ForegroundColor DarkGray
     Write-Host ""
     
     $openExplorer = Read-Host "Open output folder in Explorer? (y/n)"

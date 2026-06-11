@@ -49,7 +49,7 @@ export const en = {
 
   // License
   license_title: 'License Agreement',
-  license_subtitle: 'AegisRescue is open-source software licensed under GPL-3.0.',
+  license_subtitle: 'AegisRescue Beta 0.1.0 — open-source software licensed under GPL-3.0.',
   license_must_agree: 'You must agree to the license to continue.',
   license_agree: 'I have read and agree to the GNU General Public License v3.0',
   license_disagree: 'I do not agree',

@@ -23,11 +23,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ARCH="${ARCH:-x86_64}"
 VERSION="${VERSION:-0.1.0}"
+RELEASE="${RELEASE:-beta}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 OUT_DIR="${OUT_DIR:-${PROJECT_ROOT}/build/out}"
 CHROOT_DIR="${PROJECT_ROOT}/build/chroot"
 ISO_STAGE="${PROJECT_ROOT}/build/iso-stage"
-ISO_NAME="${OUT_DIR}/aegisrescue-${VERSION}-${ARCH}.iso"
+ISO_BASENAME="aegisrescue-${RELEASE}-${VERSION}-${ARCH}"
+ISO_NAME="${OUT_DIR}/${ISO_BASENAME}.iso"
+ISO_LABEL="AegisRescue Beta ${VERSION}"
 KERNEL_VER="${KERNEL_VER:-6.12.0-aegis}"
 SKIP_DEBOOTSTRAP=0
 SKIP_KERNEL=0
@@ -461,8 +464,8 @@ build_iso() {
     xorriso -as mkisofs \
         -iso-level 3 \
         -full-iso9660-filenames \
-        -volid "AEGISRESCUE_${VERSION//./_}" \
-        -appid "AegisRescue Linux ${VERSION}" \
+        -volid "AEGISRESCUE_BETA_${VERSION//./_}" \
+        -appid "${ISO_LABEL}" \
         -publisher "AegisRescue Project" \
         -preparer "AegisRescue Build System" \
         -isohybrid-mbr "${ISO_STAGE}/isolinux/isohdpfx.bin" \
@@ -579,7 +582,7 @@ setup_syslinux() {
 DEFAULT vesamenu.c32
 TIMEOUT 100
 PROMPT 0
-MENU TITLE AegisRescue ${VERSION}
+MENU TITLE AegisRescue Beta ${VERSION}
 
 LABEL live
   MENU LABEL AegisRescue Live (Standard)

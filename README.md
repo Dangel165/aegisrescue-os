@@ -1,4 +1,4 @@
-# AegisRescue Linux
+# AegisRescue Linux (Beta 0.1.0)
 
 <p align="center">
   <img src="docs/assets/aegisrescue-logo.svg" alt="AegisRescue OS logo" width="720">
@@ -7,6 +7,7 @@
 > 악성코드 감염 시스템 복구 및 디지털 포렌식 전용 Live Linux 운영체제
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/Release-Beta%200.1.0-orange.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.79+-orange.svg)](https://www.rust-lang.org)
 [![Architecture](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-green.svg)]()
 

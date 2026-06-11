@@ -4,7 +4,18 @@
 
   let agreed = false
 
-  const GPL3_TEXT = `GNU GENERAL PUBLIC LICENSE
+  const GPL3_TEXT = `AegisRescue Linux — Beta Release 0.1.0
+Copyright (C) 2025 AegisRescue Project
+
+BETA NOTICE: This is beta software. Features may be incomplete or unstable.
+Use at your own risk. No warranty is expressed or implied.
+
+This program is licensed under the GNU General Public License v3.0.
+See LICENSE in the AegisRescue source tree or https://www.gnu.org/licenses/gpl-3.0.txt
+
+────────────────────────────────────────────────────────────────────────
+
+GNU GENERAL PUBLIC LICENSE
 Version 3, 29 June 2007
 
 Copyright (C) 2007 Free Software Foundation, Inc.

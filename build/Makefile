@@ -25,6 +25,7 @@ SHELL        := /bin/bash
 
 ARCH         ?= x86_64
 VERSION      ?= 0.1.0
+RELEASE      ?= beta
 JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
 
 PROJECT_ROOT := $(abspath $(CURDIR)/..)
@@ -34,7 +35,7 @@ CHROOT_DIR   := $(BUILD_DIR)/chroot
 ISO_STAGE    := $(BUILD_DIR)/iso-stage
 TOOLS_DIR    := $(BUILD_DIR)/tools
 
-DISTNAME     := aegisrescue-$(VERSION)-$(ARCH)
+DISTNAME     := aegisrescue-$(RELEASE)-$(VERSION)-$(ARCH)
 ISO_OUT      := $(OUT_DIR)/$(DISTNAME).iso
 
 # Rust 타겟

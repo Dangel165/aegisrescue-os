@@ -49,7 +49,7 @@ export const ko = {
 
   // License
   license_title: '라이선스 동의',
-  license_subtitle: 'AegisRescue는 GPL-3.0 라이선스 오픈소스 소프트웨어입니다.',
+  license_subtitle: 'AegisRescue Beta 0.1.0 — GPL-3.0 오픈소스 소프트웨어입니다.',
   license_must_agree: '계속하려면 라이선스에 동의해야 합니다.',
   license_agree: 'GNU 일반 공중 라이선스 v3.0을 읽었으며 동의합니다',
   license_disagree: '동의하지 않습니다',

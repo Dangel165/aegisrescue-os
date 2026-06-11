@@ -32,6 +32,7 @@ set -euo pipefail
 # ─── 기본값 ────────────────────────────────────────────────────
 ARCH="${ARCH:-x86_64}"
 VERSION="${VERSION:-0.1.0}"
+RELEASE="${RELEASE:-beta}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 WSL_HOME="${HOME}/aegisrescue"
 WIN_SRC="/mnt/f/ofntkd/aegisrescue"   # Windows 소스 경로 (마운트 경로)
@@ -39,7 +40,9 @@ OUT_DIR="${WSL_HOME}/build/out"
 CHROOT_DIR="${WSL_HOME}/build/chroot"
 ISO_STAGE="${WSL_HOME}/build/iso-stage"
 TOOLS_DIR="${WSL_HOME}/build/tools"
-ISO_NAME="${OUT_DIR}/aegisrescue-${VERSION}-${ARCH}.iso"
+ISO_BASENAME="aegisrescue-${RELEASE}-${VERSION}-${ARCH}"
+ISO_NAME="${OUT_DIR}/${ISO_BASENAME}.iso"
+ISO_LABEL="AegisRescue Beta ${VERSION}"
 
 DO_SETUP=0; DO_COPY=0; SKIP_RUST=0; SKIP_GUI=0
 SKIP_BASE=0; ISO_ONLY=0; QEMU_TEST=0
@@ -1052,8 +1055,8 @@ build_iso_wsl() {
     xorriso -as mkisofs \
         -iso-level 3 \
         -full-iso9660-filenames \
-        -volid "AEGISRESCUE_${VERSION//./_}" \
-        -appid "AegisRescue Linux ${VERSION}" \
+        -volid "AEGISRESCUE_BETA_${VERSION//./_}" \
+        -appid "${ISO_LABEL}" \
         -publisher "AegisRescue Project" \
         -isohybrid-mbr "${ISO_STAGE}/isolinux/isohdpfx.bin" \
         -eltorito-boot isolinux/isolinux.bin \
@@ -1084,7 +1087,7 @@ build_iso_wsl() {
 
     echo ""
     echo -e "${G}${B}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
-    echo -e "${G}${B}  ✓ AegisRescue ISO 빌드 완료!${N}"
+    echo -e "${G}${B}  ✓ AegisRescue Beta ISO 빌드 완료!${N}"
     echo -e "${G}${B}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
     echo -e "  ISO: ${C}${ISO_NAME}${N}"
     echo -e "  크기: ${iso_size}"
@@ -1125,7 +1128,7 @@ setup_syslinux_wsl() {
     cat > "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF
 DEFAULT vesamenu.c32
 TIMEOUT 100
-MENU TITLE AegisRescue ${VERSION}
+MENU TITLE AegisRescue Beta ${VERSION}
 LABEL live
   MENU LABEL AegisRescue Live
   KERNEL /boot/vmlinuz

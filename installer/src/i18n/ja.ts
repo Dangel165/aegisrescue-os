@@ -45,7 +45,7 @@ export const ja = {
   preflight_fail_msg: '必須要件が満たされていません。エラーを修正してから続行してください。',
 
   license_title: 'ライセンス契約',
-  license_subtitle: 'AegisRescue は GPL-3.0 ライセンスのオープンソースソフトウェアです。',
+  license_subtitle: 'AegisRescue Beta 0.1.0 — GPL-3.0 ライセンスのオープンソースソフトウェアです。',
   license_must_agree: '続行するにはライセンスに同意する必要があります。',
   license_agree: 'GNU 一般公衆利用許諾契約書 v3.0 を読み、同意します',
   license_disagree: '同意しない',

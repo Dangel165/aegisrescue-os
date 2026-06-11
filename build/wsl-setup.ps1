@@ -202,7 +202,7 @@ Write-Host ""
 Write-Host "  Option C - Open WSL and run:" -ForegroundColor White
 Write-Host "    sudo bash $UnixPath/build/wsl-build.sh" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "  Output: $ProjectRoot\build\out\aegisrescue-0.1.0-x86_64.iso" -ForegroundColor Cyan
+Write-Host "  Output: $ProjectRoot\build\out\aegisrescue-beta-0.1.0-x86_64.iso" -ForegroundColor Cyan
 Write-Host ""
 
 $startNow = Read-Host "Start building now? (y/n)"
