@@ -1,0 +1,14 @@
+[Unit]
+Description=AegisRescue GUI fallback when LightDM/X did not start
+After=lightdm.service
+After=systemd-user-sessions.service
+ConditionKernelCommandLine=!aegis.cli
+ConditionPathExists=!/run/aegis/gui-fallback-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/aegis/bin/aegis-gui-fallback.sh
+
+[Install]
+WantedBy=graphical.target

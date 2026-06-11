@@ -51,15 +51,25 @@ EOF
 
     echo '/usr/sbin/lightdm' > "${chroot}/etc/X11/default-display-manager"
 
-    # LightDM — autologin aegis → Openbox session (installer autostarts in openbox)
+    # debconf: LightDM as default DM + autologin user
+    {
+        echo 'shared shared/default-x-display-manager select lightdm'
+        echo 'shared shared/default-x-display-manager seen true'
+        echo 'lightdm lightdm/autologin-user string aegis'
+        echo 'lightdm lightdm/autologin-user seen true'
+    } | chroot "${chroot}" debconf-set-selections 2>/dev/null || true
+    chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive \
+        dpkg-reconfigure -f noninteractive lightdm 2>/dev/null || true
+
+    # LightDM — autologin aegis → Openbox (installer via ~/.config/openbox/autostart)
     mkdir -p "${chroot}/etc/lightdm/lightdm.conf.d"
     mkdir -p "${chroot}/usr/share/xsessions"
     if [[ -n "$project_root" && -f "${project_root}/packaging/lightdm/aegis-lightdm.conf" ]]; then
         cp "${project_root}/packaging/lightdm/aegis-lightdm.conf" \
            "${chroot}/etc/lightdm/lightdm.conf.d/50-aegis.conf"
-        cp "${project_root}/packaging/lightdm/aegis-openbox.desktop" \
-           "${chroot}/usr/share/xsessions/aegis-openbox.desktop"
     fi
+
+    mkdir -p "${chroot}/var/log/lightdm"
 
     mkdir -p "${chroot}/usr/share/applications"
     cat > "${chroot}/usr/share/applications/aegis-installer.desktop" <<'EOF'
@@ -95,6 +105,7 @@ EOF
     chroot "${chroot}" systemctl set-default graphical.target 2>/dev/null || true
     chroot "${chroot}" systemctl unmask lightdm.service 2>/dev/null || true
     chroot "${chroot}" systemctl enable lightdm.service 2>/dev/null || true
+    chroot "${chroot}" systemctl enable aegis-gui-fallback.service 2>/dev/null || true
 
     # Installer runs from Openbox autostart (user session). System unit cannot access :0 → restart loop.
     chroot "${chroot}" systemctl disable aegis-installer.service 2>/dev/null || true
@@ -114,11 +125,14 @@ install_live_gui_scripts() {
     local project_root="$2"
 
     mkdir -p "${chroot}/opt/aegis/bin"
-    for script in aegis-live-autostart.sh aegis-xsession.sh aegis-startx.sh; do
+    for script in aegis-live-autostart.sh aegis-xsession.sh aegis-startx.sh aegis-gui-fallback.sh; do
         cp "${project_root}/packaging/scripts/${script}" \
            "${chroot}/opt/aegis/bin/${script}"
         chmod 755 "${chroot}/opt/aegis/bin/${script}"
     done
+
+    cp "${project_root}/packaging/systemd/aegis-gui-fallback.service" \
+       "${chroot}/etc/systemd/system/aegis-gui-fallback.service" 2>/dev/null || true
 
     mkdir -p "${chroot}/home/aegis/.config/openbox" \
              "${chroot}/etc/skel/.config/openbox"
