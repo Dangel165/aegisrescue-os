@@ -45,12 +45,27 @@ pub async fn start_installation(
     let mut installer = Installer::new(config);
     let progress_store = state.0.clone();
 
-    installer.run(move |progress| {
-        if let Ok(mut slot) = progress_store.lock() {
-            *slot = Some(progress.clone());
-        }
-        let _ = window.emit("install-progress", &progress);
-    }).await.map_err(|e| e.to_string())
+    installer
+        .run(move |progress| {
+            if let Ok(mut slot) = progress_store.lock() {
+                *slot = Some(progress.clone());
+            }
+            let _ = window.emit("install-progress", &progress);
+        })
+        .await
+        .map_err(|e| {
+            let msg = e.to_string();
+            let _ = window.emit(
+                "install-progress",
+                InstallProgress {
+                    phase: crate::install::InstallPhase::Failed,
+                    percent: 0,
+                    message: msg.clone(),
+                    error: Some(msg.clone()),
+                },
+            );
+            msg
+        })
 }
 
 #[tauri::command]
@@ -75,6 +90,21 @@ pub struct SystemInfo {
     pub uefi: bool,
     pub secure_boot: bool,
     pub tpm_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InstallBuildInfo {
+    pub build_id: String,
+    pub system_partition_mib: u32,
+}
+
+#[tauri::command]
+pub fn get_installer_build_info() -> InstallBuildInfo {
+    let (build_id, system_partition_mib) = crate::install::installer_build_info();
+    InstallBuildInfo {
+        build_id: build_id.to_string(),
+        system_partition_mib,
+    }
 }
 
 #[tauri::command]

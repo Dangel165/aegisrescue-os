@@ -523,15 +523,12 @@ install_grub_fonts() {
     if [[ -n "$grub_font_src" ]]; then
         cp "$grub_font_src" "${ISO_STAGE}/boot/grub/fonts/"
     fi
-    # GRUB 테마
-    mkdir -p "${ISO_STAGE}/boot/grub/themes/aegis"
-    cp "${SCRIPT_DIR}/grub/theme.txt" \
-       "${ISO_STAGE}/boot/grub/themes/aegis/" 2>/dev/null || true
+    rm -rf "${ISO_STAGE}/boot/grub/themes" "${ISO_STAGE}/boot/grub/aegis-bg.png" 2>/dev/null || true
 
     # shellcheck source=stage-boot-logos.sh
     source "${SCRIPT_DIR}/stage-boot-logos.sh"
     if stage_iso_boot_logos "${PROJECT_ROOT}" "${ISO_STAGE}"; then
-        ok "부팅 로고 적용: aegisrescue-boot-logo-black.png"
+        ok "ISOLINUX splash 적용"
     else
         warn "부팅 로고 파일을 찾지 못했습니다. AEGIS_BOOT_LOGO=/path/logo.png 지정 가능"
     fi
@@ -564,7 +561,6 @@ DEFAULT vesamenu.c32
 TIMEOUT 100
 PROMPT 0
 MENU TITLE AegisRescue Beta ${VERSION}
-MENU BACKGROUND splash.png
 EOF
     cat "${SCRIPT_DIR}/isolinux/vesamenu-colors.cfg" >> "${ISO_STAGE}/isolinux/isolinux.cfg"
     cat >> "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF

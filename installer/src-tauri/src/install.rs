@@ -3,6 +3,19 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// EFI 시스템 파티션 (MiB)
+const EFI_SIZE_MIB: u32 = 512;
+/// Live squashfs 전개 + ext4 메타데이터 (최소 12GiB, squashfs 크기에 따라 자동 확대)
+const MIN_SYSTEM_MIB: u32 = 12288;
+const SYSTEM_MARGIN_MIB: u32 = 2048;
+const MIN_DATA_MIB: u32 = 2048;
+const INSTALLER_IMAGE_ID: &str = "aegis-installer-v2-12g";
+
+/// Shown in UI so Live ISO can be verified before disk install.
+pub fn installer_build_info() -> (&'static str, u32) {
+    (INSTALLER_IMAGE_ID, compute_system_partition_mib())
+}
+
 /// 설치 구성 (프론트엔드에서 전달)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallConfig {
@@ -73,6 +86,21 @@ impl InstallConfig {
 
         if self.target_device.is_empty() && self.install_mode != InstallMode::LiveUsb {
             return Err(anyhow::anyhow!("대상 장치를 선택하세요"));
+        }
+        if self.install_mode == InstallMode::WholeDisk && !self.target_device.is_empty() {
+            if let Ok(info) = crate::disk::get_disk_info(&self.target_device) {
+                let sys_mib = compute_system_partition_mib();
+                let need_bytes =
+                    (EFI_SIZE_MIB + sys_mib + MIN_DATA_MIB) as u64 * 1024 * 1024;
+                if info.disk.size_bytes < need_bytes {
+                    return Err(anyhow::anyhow!(
+                        "디스크 용량 부족: {:.1} GiB 필요 (시스템 파티션 {} GiB), {} 감지됨",
+                        need_bytes as f64 / 1024.0 / 1024.0 / 1024.0,
+                        sys_mib as f64 / 1024.0,
+                        info.disk.size_human
+                    ));
+                }
+            }
         }
         if self.hostname.is_empty() {
             return Err(anyhow::anyhow!("호스트명을 입력하세요"));
@@ -172,35 +200,50 @@ impl Installer {
         let dev = &self.config.target_device;
         tracing::info!(device = dev, "creating partition table");
 
-        // GPT 파티션 테이블 생성
-        let cmds: &[(&str, &[&str])] = &[
-            ("sgdisk", &["--zap-all", dev]),
-            ("sgdisk", &["--new=1:0:+512M", "--typecode=1:EF00",
-                         "--change-name=1:EFI", dev]),
-            ("sgdisk", &["--new=2:0:+2G", "--typecode=2:8300",
-                         "--change-name=2:AegisSystem", dev]),
-            ("sgdisk", &["--new=3:0:0", "--typecode=3:8300",
-                         "--change-name=3:AegisData", dev]),
-        ];
+        let sys_mib = compute_system_partition_mib();
+        let sys_new = format!("--new=2:0:+{}M", sys_mib);
+        tracing::info!(sys_mib, image = INSTALLER_IMAGE_ID, "creating partitions");
 
-        for (cmd, args) in cmds {
-            let status = tokio::process::Command::new(cmd)
-                .args(*args)
-                .status()
-                .await
-                .map_err(|e| anyhow::anyhow!("{} not found: {}", cmd, e))?;
+        run_or_bail("sgdisk", &["--zap-all", dev]).await?;
+        run_or_bail(
+            "sgdisk",
+            &[
+                "--new=1:0:+512M",
+                "--typecode=1:EF00",
+                "--change-name=1:EFI",
+                dev,
+            ],
+        )
+        .await?;
+        run_or_bail(
+            "sgdisk",
+            &[
+                sys_new.as_str(),
+                "--typecode=2:8300",
+                "--change-name=2:AegisSystem",
+                dev,
+            ],
+        )
+        .await?;
+        run_or_bail(
+            "sgdisk",
+            &["--new=3:0:0", "--typecode=3:8300", "--change-name=3:AegisData", dev],
+        )
+        .await?;
 
-            if !status.success() {
-                tracing::warn!("{} failed (non-Linux or permission issue)", cmd);
-            }
-        }
-
-        // 파티션 테이블 갱신
         let _ = tokio::process::Command::new("partprobe")
             .arg(dev)
             .status()
             .await;
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let part_suffix = partition_suffix(dev);
+        for n in 1..=3 {
+            let part = format!("{}{}{n}", dev, part_suffix);
+            if !Path::new(&part).exists() {
+                anyhow::bail!("파티션 생성 실패: {} 없음 (sgdisk/root 권한 확인)", part);
+            }
+        }
 
         Ok(())
     }
@@ -213,40 +256,33 @@ impl Installer {
         let sys_part  = format!("{}{}2", dev, part_suffix);
         let data_part = format!("{}{}3", dev, part_suffix);
 
-        // EFI 파티션: FAT32
-        let _ = tokio::process::Command::new("mkfs.vfat")
-            .args(["-F", "32", "-n", "EFI", &efi_part])
-            .status().await;
+        run_or_bail("mkfs.vfat", &["-F", "32", "-n", "EFI", &efi_part]).await?;
 
-        // 시스템 파티션: ext4 (암호화 옵션)
         if self.config.security.encrypt_system {
             let pass = self.config.security.encrypt_passphrase.as_deref().unwrap_or("aegis");
-            // LUKS 포맷
-            let _ = tokio::process::Command::new("sh")
-                .args(["-c", &format!(
-                    "echo -n '{}' | cryptsetup luksFormat {} -",
-                    pass, sys_part
-                )])
-                .status().await;
-            let _ = tokio::process::Command::new("sh")
-                .args(["-c", &format!(
+            let pass_esc = pass.replace('\'', "'\\''");
+            run_or_bail(
+                "sh",
+                &[&format!(
+                    "echo -n '{}' | cryptsetup luksFormat --batch-mode {} -",
+                    pass_esc, sys_part
+                )],
+            )
+            .await?;
+            run_or_bail(
+                "sh",
+                &[&format!(
                     "echo -n '{}' | cryptsetup open {} aegis_root -",
-                    pass, sys_part
-                )])
-                .status().await;
-            let _ = tokio::process::Command::new("mkfs.ext4")
-                .args(["-L", "AegisSystem", "/dev/mapper/aegis_root"])
-                .status().await;
+                    pass_esc, sys_part
+                )],
+            )
+            .await?;
+            run_or_bail("mkfs.ext4", &["-F", "-m", "1", "-L", "AegisSystem", "/dev/mapper/aegis_root"]).await?;
         } else {
-            let _ = tokio::process::Command::new("mkfs.ext4")
-                .args(["-L", "AegisSystem", &sys_part])
-                .status().await;
+            run_or_bail("mkfs.ext4", &["-F", "-m", "1", "-L", "AegisSystem", &sys_part]).await?;
         }
 
-        // 데이터 파티션: ext4
-        let _ = tokio::process::Command::new("mkfs.ext4")
-            .args(["-L", "AegisData", &data_part])
-            .status().await;
+        run_or_bail("mkfs.ext4", &["-F", "-L", "AegisData", &data_part]).await?;
 
         Ok(())
     }
@@ -264,8 +300,23 @@ impl Installer {
         let target = if self.config.security.encrypt_system {
             "/dev/mapper/aegis_root".to_string()
         } else {
-            sys_part
+            sys_part.clone()
         };
+
+        if let Some(squashfs) = resolve_live_squashfs() {
+            let need = required_uncompressed_bytes(&squashfs)?;
+            let avail = partition_size_bytes(&target)?;
+            if need > avail {
+                anyhow::bail!(
+                    "시스템 파티션 용량 부족: {:.1} GiB 필요, {:.1} GiB 사용 가능 \
+                     (파티션 {} MiB, 빌드 {}). ISO/installer를 최신으로 다시 빌드하세요.",
+                    need as f64 / 1024.0 / 1024.0 / 1024.0,
+                    avail as f64 / 1024.0 / 1024.0 / 1024.0,
+                    compute_system_partition_mib(),
+                    INSTALLER_IMAGE_ID
+                );
+            }
+        }
 
         run_command("mount", &[&target, mount_root]).await.map_err(|e| {
             anyhow::anyhow!("시스템 파티션 마운트 실패 ({} → {}): {}", target, mount_root, e)
@@ -513,19 +564,82 @@ fn partition_suffix(dev: &str) -> &'static str {
 }
 
 fn resolve_live_squashfs() -> Option<PathBuf> {
-    const CANDIDATESTS: &[&str] = &[
+    const CANDIDATES: &[&str] = &[
         "/run/live/medium/live/filesystem.squashfs",
         "/run/live/rootfs/filesystem.squashfs",
         "/lib/live/mount/medium/live/filesystem.squashfs",
-        "/lib/live/mount/medium/live/filesystem.squashfs",
         "/cdrom/live/filesystem.squashfs",
         "/run/initramfs/live/filesystem.squashfs",
+        "/live/filesystem.squashfs",
     ];
-    CANDIDATESTS
-        .iter()
-        .map(Path::new)
-        .find(|p| p.is_file())
-        .map(|p| p.to_path_buf())
+    for p in CANDIDATES {
+        let path = Path::new(p);
+        if path.is_file() {
+            return Some(path.to_path_buf());
+        }
+    }
+    for base in [
+        "/run/live/medium",
+        "/lib/live/mount/medium",
+        "/cdrom",
+        "/run/initramfs/live",
+    ] {
+        let p = Path::new(base).join("live/filesystem.squashfs");
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn compute_system_partition_mib() -> u32 {
+    if let Some(sq) = resolve_live_squashfs() {
+        if let Ok(bytes) = required_uncompressed_bytes(&sq) {
+            let need_mib = (bytes / 1024 / 1024) as u32 + SYSTEM_MARGIN_MIB;
+            return need_mib.max(MIN_SYSTEM_MIB);
+        }
+    }
+    MIN_SYSTEM_MIB
+}
+
+fn required_uncompressed_bytes(squashfs: &Path) -> anyhow::Result<u64> {
+    if let Some(size_file) = squashfs_uncompressed_size_file(squashfs) {
+        if let Ok(text) = std::fs::read_to_string(&size_file) {
+            if let Ok(n) = text.trim().parse::<u64>() {
+                if n > 0 {
+                    // ext4 메타데이터 + 여유 10%
+                    return Ok(n.saturating_mul(110) / 100);
+                }
+            }
+        }
+    }
+    let compressed = std::fs::metadata(squashfs)?.len();
+    Ok(compressed.saturating_mul(4))
+}
+
+fn squashfs_uncompressed_size_file(squashfs: &Path) -> Option<PathBuf> {
+    squashfs
+        .parent()
+        .map(|p| p.join("filesystem.size"))
+        .filter(|p| p.is_file())
+}
+
+fn partition_size_bytes(device: &str) -> anyhow::Result<u64> {
+    let output = std::process::Command::new("blockdev")
+        .args(["--getsize64", device])
+        .output()
+        .map_err(|e| anyhow::anyhow!("blockdev failed for {}: {}", device, e))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "파티션 크기 조회 실패: {} (exit {:?})",
+            device,
+            output.status.code()
+        );
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.trim()
+        .parse::<u64>()
+        .map_err(|e| anyhow::anyhow!("invalid blockdev size for {}: {}", device, e))
 }
 
 async fn copy_live_system_to_mount<F>(mount_root: &str, progress_cb: &F) -> anyhow::Result<()>
@@ -540,12 +654,36 @@ where
                 message: format!("시스템 이미지 압축 해제 중 ({})...", squashfs.display()),
                 error: None,
             });
-            run_command("unsquashfs", &["-f", "-d", mount_root, squashfs.to_str().unwrap()])
-                .await
-                .map_err(|e| anyhow::anyhow!("unsquashfs 실패: {}", e))?;
+            run_command_capture(
+                "unsquashfs",
+                &["-f", "-d", mount_root, squashfs.to_str().unwrap()],
+            )
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "unsquashfs 실패 ({} → {}): {}. \
+                     시스템 파티션 {} MiB ({}) — ISO를 최신 installer로 재빌드했는지 확인하세요.",
+                    squashfs.display(),
+                    mount_root,
+                    e,
+                    compute_system_partition_mib(),
+                    INSTALLER_IMAGE_ID
+                )
+            })?;
             return Ok(());
         }
+        anyhow::bail!(
+            "filesystem.squashfs 는 {} 에 있으나 unsquashfs 가 없습니다",
+            squashfs.display()
+        );
     }
+
+    progress_cb(InstallProgress {
+        phase: InstallPhase::CopyingFiles,
+        percent: 38,
+        message: "Live squashfs 미발견 — rsync/tar 폴백 시도".into(),
+        error: None,
+    });
 
     if is_tool_available("rsync") {
         progress_cb(InstallProgress {
@@ -600,16 +738,35 @@ async fn copy_live_root_with_tar(mount_root: &str) -> anyhow::Result<()> {
 }
 
 async fn run_command(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
-    let status = tokio::process::Command::new(cmd)
+    run_command_capture(cmd, args).await.map(|_| ())
+}
+
+async fn run_command_capture(cmd: &str, args: &[&str]) -> anyhow::Result<String> {
+    let output = tokio::process::Command::new(cmd)
         .args(args)
-        .status()
+        .output()
         .await
         .map_err(|e| anyhow::anyhow!("failed to run {}: {}", cmd, e))?;
-    if status.success() {
-        Ok(())
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
-        Err(anyhow::anyhow!("{} {:?} failed (exit {:?})", cmd, args, status.code()))
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("exit {:?}", output.status.code())
+        };
+        Err(anyhow::anyhow!("{} {:?} failed: {}", cmd, args, detail))
     }
+}
+
+async fn run_or_bail(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
+    run_command(cmd, args).await.map_err(|e| {
+        anyhow::anyhow!("{} 실행 실패 (root 권한·대상 디스크 확인): {}", cmd, e)
+    })
 }
 
 fn ensure_mounted_root(root: &str) -> anyhow::Result<()> {

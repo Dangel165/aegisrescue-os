@@ -144,12 +144,9 @@ stage_iso_boot_logos() {
 
     local logo_svg
     logo_svg="$(resolve_boot_mark_svg "${project_root}")"
-    mkdir -p "${iso_stage}/boot/grub/themes/aegis" "${iso_stage}/isolinux"
+    mkdir -p "${iso_stage}/isolinux"
 
-    prepare_centered_boot_logo_png "$logo_src" "${iso_stage}/boot/grub/aegis-bg.png" \
-        "${AEGIS_BOOT_CANVAS_W}" "${AEGIS_BOOT_CANVAS_H}" "${AEGIS_BOOT_LOGO_PCT}" "$logo_svg"
-    prepare_centered_boot_logo_png "$logo_src" "${iso_stage}/boot/grub/themes/aegis/aegis-bg.png" \
-        "${AEGIS_BOOT_CANVAS_W}" "${AEGIS_BOOT_CANVAS_H}" "${AEGIS_BOOT_LOGO_PCT}" "$logo_svg"
+    # GRUB: no theme/background PNGs — GRUB auto-loads themes from boot/grub/themes/
     prepare_menu_splash_png "$logo_src" "${iso_stage}/isolinux/splash.png" "$logo_svg"
     return 0
 }

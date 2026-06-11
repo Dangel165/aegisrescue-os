@@ -1,70 +1,58 @@
-# AegisRescue GRUB theme — dark gray / black, white text
-# =====================================================================
+# Ubuntu-style GRUB theme — solid background only (no desktop-image PNG)
+# Requires DejaVuSans-Regular-16.pf2 + DejaVuSans-Bold-16.pf2 in boot/grub/fonts/
 
-title-text: "AegisRescue Linux"
-title-color: "#ffffff"
-title-font: "Sans Bold 20"
+desktop-color: "#2C2C2C"
 
-desktop-color: "#2a2a2a"
+title-text: "AegisRescue"
+title-color: "#FFFFFF"
+title-font: "DejaVu Sans Regular 16"
 
-message-color: "#ffffff"
-message-bg-color: "#111111"
+message-color: "#FFFFFF"
+message-bg-color: "#2C2C2C"
+message-font: "DejaVu Sans Regular 16"
 
-# Menu style
 + boot_menu {
-    left   = 10%
-    top    = 28%
-    width  = 80%
-    height = 50%
+    left   = 12%
+    top    = 22%
+    width  = 76%
+    height = 55%
 
-    item_font  = "Sans 14"
-    item_color = "#e0e0e0"
+    item_font  = "DejaVu Sans Regular 16"
+    item_color = "#E0E0E0"
 
-    selected_item_font  = "Sans Bold 14"
-    selected_item_color = "#ffffff"
+    selected_item_font  = "DejaVu Sans Bold 16"
+    selected_item_color = "#FFFFFF"
 
-    item_height         = 30
-    item_padding        = 10
-    item_spacing        = 4
+    item_height  = 32
+    item_padding = 12
+    item_spacing = 4
 
     scrollbar = true
-    scrollbar_width = 10
+    scrollbar_width = 16
 }
 
-# Timeout bar
 + progress_bar {
     id   = "__timeout__"
-    left = 18%
-    top  = 88%
-    width = 64%
-    height = 8
+    left = 12%
+    top  = 82%
+    width = 76%
+    height = 18
 
-    fg_color     = "#cccccc"
-    bg_color     = "#2a2a2a"
-    border_color = "#505050"
+    fg_color     = "#E95420"
+    bg_color     = "#404040"
+    border_color = "#666666"
 
-    text       = ""
-    text_color = "#ffffff"
-    text_font  = "Sans 12"
+    text       = "Booting in @TIMEOUT@ sec"
+    text_color = "#FFFFFF"
+    text_font  = "DejaVu Sans Regular 16"
 }
 
-# Bottom hint
 + label {
-    top    = 92%
-    left   = 18%
-    width  = 64%
-    align  = "center"
-    text   = "Up/Down Select   Enter Boot   e Edit   c Console"
-    color  = "#cccccc"
-    font   = "Sans 11"
-}
-
-# Version label
-+ label {
-    top    = 4%
-    left   = 50%
-    align  = "center"
-    text   = "AegisRescue Linux v0.1.0 | Malware Recovery OS"
-    color  = "#ffffff"
-    font   = "Sans 12"
+    top   = 88%
+    left  = 12%
+    width = 76%
+    align = "center"
+    text  = "Use Up/Down to select, Enter to boot, e to edit"
+    color = "#AAAAAA"
+    font  = "DejaVu Sans Regular 16"
 }

@@ -23,8 +23,19 @@
   let passphrase = $config.security.encrypt_passphrase ?? ''
   let passphraseConfirm = ''
   let passphraseError = ''
+  let buildId = ''
+  let systemPartGiB = 0
 
   onMount(async () => {
+    try {
+      const info = await invoke<{ build_id: string; system_partition_mib: number }>(
+        'get_installer_build_info'
+      )
+      buildId = info.build_id
+      systemPartGiB = Math.round(info.system_partition_mib / 1024)
+    } catch {
+      buildId = 'unknown (old installer?)'
+    }
     try {
       disks = await invoke<TargetDisk[]>('list_target_disks')
     } catch {
@@ -92,6 +103,18 @@
 <div class="step-container">
   <h2 class="step-title">{$t.disk_title}</h2>
   <p class="step-subtitle">{$t.disk_subtitle}</p>
+
+  {#if buildId}
+    <div class="info-box">
+      Installer: <strong>{buildId}</strong>
+      {#if systemPartGiB > 0}
+        · 시스템 파티션 <strong>{systemPartGiB} GiB</strong>
+      {/if}
+      {#if buildId !== 'aegis-installer-v2-12g'}
+        <br /><span class="warn-inline">⚠ ISO/installer가 오래됐습니다. unsquashfs 40% 오류 가능 — ISO 재빌드 필요</span>
+      {/if}
+    </div>
+  {/if}
 
   <!-- 설치 모드 선택 -->
   <div class="mode-group">
@@ -263,5 +286,10 @@
     color: #f85149;
     margin-top: -8px;
     margin-bottom: 8px;
+  }
+
+  .warn-inline {
+    color: #f0883e;
+    font-size: 12px;
   }
 </style>

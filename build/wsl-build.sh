@@ -25,6 +25,7 @@
 #   --skip-gui       GUI 빌드 건너뜀
 #   --skip-base      debootstrap 건너뜀 (기존 chroot 재사용)
 #   --iso-only       squashfs + ISO만 재생성
+#   --grub-only      GRUB/EFI/SYSLINUX만 갱신 후 ISO 재패킹 (~1분, squashfs 생략)
 #   --qemu-test      빌드 후 QEMU로 자동 테스트
 # =============================================================================
 set -euo pipefail
@@ -39,7 +40,7 @@ ISO_BASENAME="aegisrescue-${RELEASE}-${VERSION}-${ARCH}"
 ISO_LABEL="AegisRescue Beta ${VERSION}"
 
 DO_SETUP=0; DO_COPY=0; SKIP_RUST=0; SKIP_GUI=0
-SKIP_BASE=0; ISO_ONLY=0; QEMU_TEST=0
+SKIP_BASE=0; ISO_ONLY=0; GRUB_ONLY=0; QEMU_TEST=0
 
 # Never allow apt/debconf packages such as tzdata to stop the build.
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
@@ -118,6 +119,7 @@ while [[ $# -gt 0 ]]; do
         --skip-gui)   SKIP_GUI=1;   shift ;;
         --skip-base)  SKIP_BASE=1;  shift ;;
         --iso-only)   ISO_ONLY=1; SKIP_RUST=1; SKIP_GUI=1; SKIP_BASE=1; shift ;;
+        --grub-only)  GRUB_ONLY=1; ISO_ONLY=1; SKIP_RUST=1; SKIP_GUI=1; SKIP_BASE=1; shift ;;
         --qemu-test)  QEMU_TEST=1;  shift ;;
         -h|--help)    grep '^#' "$0" | head -25 | sed 's/^# \?//'; exit 0 ;;
         *) err "알 수 없는 옵션: $1" ;;
@@ -202,7 +204,7 @@ EOF
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         debootstrap xorriso squashfs-tools \
         grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed \
-        grub2-common grub-common \
+        grub2-common grub-common fonts-dejavu-core \
         isolinux syslinux syslinux-common \
         dosfstools mtools \
         xz-utils zstd lz4 gzip \
@@ -1122,74 +1124,102 @@ EOF
 }
 
 # ─── squashfs + ISO ──────────────────────────────────────────────
+restore_iso_stage_from_existing_iso() {
+    local iso_path="$1"
+    [[ -f "$iso_path" ]] || return 1
+    command -v xorriso >/dev/null 2>&1 || return 1
+
+    mkdir -p "${ISO_STAGE}/live" "${ISO_STAGE}/boot" "${ISO_STAGE}/isolinux"
+
+    local src dst
+    for pair in \
+        "/live/filesystem.squashfs:${ISO_STAGE}/live/filesystem.squashfs" \
+        "/live/filesystem.size:${ISO_STAGE}/live/filesystem.size" \
+        "/boot/vmlinuz:${ISO_STAGE}/boot/vmlinuz" \
+        "/boot/initramfs.img:${ISO_STAGE}/boot/initramfs.img" \
+        "/isolinux/splash.png:${ISO_STAGE}/isolinux/splash.png"; do
+        src="${pair%%:*}"
+        dst="${pair##*:}"
+        [[ -f "$dst" ]] && continue
+        xorriso -osirrox on -indev "$iso_path" -extract "$src" "$dst" 2>/dev/null || true
+    done
+
+    [[ -f "${ISO_STAGE}/live/filesystem.squashfs" ]]
+}
+
 build_iso_wsl() {
     step "squashfs 및 ISO 생성"
 
     mkdir -p "${OUT_DIR}" "${ISO_STAGE}"/{boot/grub,boot/grub/fonts,EFI/BOOT,live,isolinux}
 
-    # --iso-only 도 포함: squashfs 전에 설치 도구 보장
-    ensure_chroot_installer_tools "${CHROOT_DIR}"
-
-    # squashfs
-    log "squashfs 생성 중 (xz 압축, ${JOBS} 코어)..."
-    log "예상 시간: 5-20분"
-    mksquashfs "${CHROOT_DIR}" "${ISO_STAGE}/live/filesystem.squashfs" \
-        -comp xz \
-        -Xbcj x86 \
-        -b 1M \
-        -processors "${JOBS}" \
-        -wildcards \
-        -ef "${WSL_HOME}/build/squashfs-excludes.txt" \
-        -noappend \
-        -progress \
-        2>&1 | grep -E "^(Parallel|Deflating|[0-9]+%|Created)" | tail -5 || true
-
-    local sq_size
-    sq_size=$(du -sh "${ISO_STAGE}/live/filesystem.squashfs" | cut -f1)
-    ok "squashfs: ${sq_size}"
-    du -sx --block-size=1 "${CHROOT_DIR}" 2>/dev/null | cut -f1 \
-        > "${ISO_STAGE}/live/filesystem.size" || true
-
-    du -s --block-size=1 "${CHROOT_DIR}" | cut -f1 \
-        > "${ISO_STAGE}/live/filesystem.size"
-
-    # 커널 / initramfs 복사
-    local vmlinuz initrd
-    vmlinuz=$(ls "${CHROOT_DIR}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1 || echo "")
-    initrd=$(ls "${CHROOT_DIR}/boot/initrd.img-"* 2>/dev/null | sort -V | tail -1 || echo "")
-
-    if [[ -f "$vmlinuz" ]]; then
-        cp "$vmlinuz" "${ISO_STAGE}/boot/vmlinuz"
-        ok "커널: $(basename "$vmlinuz")"
+    if [[ ${GRUB_ONLY} -eq 1 ]]; then
+        if [[ ! -f "${ISO_STAGE}/live/filesystem.squashfs" ]]; then
+            local existing_iso=""
+            if [[ -f "${ISO_NAME}" ]]; then
+                existing_iso="${ISO_NAME}"
+            else
+                existing_iso=$(ls -t "${OUT_DIR}/"*.iso 2>/dev/null | head -1 || true)
+            fi
+            if [[ -n "$existing_iso" ]] && restore_iso_stage_from_existing_iso "$existing_iso"; then
+                ok "ISO stage 복원: $(basename "$existing_iso")"
+            else
+                err "--grub-only: squashfs 없음. 먼저 --iso-only 로 빌드하거나 build/out/*.iso 가 있어야 합니다."
+            fi
+        fi
+        log "GRUB-only: squashfs/chroot 건너뜀 (기존 live 이미지 재사용)"
     else
-        warn "커널 없음 — debootstrap 단계 확인 필요"
-        # 더미 파일 (테스트용)
-        dd if=/dev/zero bs=1M count=1 of="${ISO_STAGE}/boot/vmlinuz" 2>/dev/null
+        # --iso-only 도 포함: squashfs 전에 설치 도구 보장
+        ensure_chroot_installer_tools "${CHROOT_DIR}"
+
+        # squashfs
+        wsl_umount_chroot "${CHROOT_DIR}" 2>/dev/null || true
+
+        log "squashfs 생성 중 (xz 압축, ${JOBS} 코어)..."
+        log "예상 시간: 5-20분"
+        mksquashfs "${CHROOT_DIR}" "${ISO_STAGE}/live/filesystem.squashfs" \
+            -comp xz \
+            -Xbcj x86 \
+            -b 1M \
+            -processors "${JOBS}" \
+            -wildcards \
+            -ef "${WSL_HOME}/build/squashfs-excludes.txt" \
+            -noappend \
+            -progress \
+            2>&1 | grep -E "^(Parallel|Deflating|[0-9]+%|Created)" | tail -5 || true
+
+        local sq_size
+        sq_size=$(du -sh "${ISO_STAGE}/live/filesystem.squashfs" | cut -f1)
+        ok "squashfs: ${sq_size}"
+        if ! du -sx --block-size=1 "${CHROOT_DIR}" 2>/dev/null | cut -f1 \
+            > "${ISO_STAGE}/live/filesystem.size"; then
+            stat -c%s "${ISO_STAGE}/live/filesystem.squashfs" \
+                > "${ISO_STAGE}/live/filesystem.size" 2>/dev/null || \
+                echo 0 > "${ISO_STAGE}/live/filesystem.size"
+        fi
+
+        # 커널 / initramfs 복사
+        local vmlinuz initrd
+        vmlinuz=$(ls "${CHROOT_DIR}/boot/vmlinuz-"* 2>/dev/null | sort -V | tail -1 || echo "")
+        initrd=$(ls "${CHROOT_DIR}/boot/initrd.img-"* 2>/dev/null | sort -V | tail -1 || echo "")
+
+        if [[ -f "$vmlinuz" ]]; then
+            cp "$vmlinuz" "${ISO_STAGE}/boot/vmlinuz"
+            ok "커널: $(basename "$vmlinuz")"
+        else
+            warn "커널 없음 — debootstrap 단계 확인 필요"
+            dd if=/dev/zero bs=1M count=1 of="${ISO_STAGE}/boot/vmlinuz" 2>/dev/null
+        fi
+
+        [[ -f "$initrd" ]] && cp "$initrd" "${ISO_STAGE}/boot/initramfs.img"
     fi
 
-    [[ -f "$initrd" ]] && cp "$initrd" "${ISO_STAGE}/boot/initramfs.img"
-
-    # GRUB 설정
-    cp "${WSL_HOME}/build/grub/grub.cfg" "${ISO_STAGE}/boot/grub/grub.cfg"
-    mkdir -p "${ISO_STAGE}/boot/grub/themes/aegis"
-    cp "${WSL_HOME}/build/grub/theme.txt" \
-       "${ISO_STAGE}/boot/grub/themes/aegis/theme.txt" 2>/dev/null || \
-       cp "${WSL_HOME}/build/grub/theme.txt" \
-          "${ISO_STAGE}/boot/grub/themes/aegis/theme.txt" 2>/dev/null || true
-
-    # 부팅 로고/배경 (GRUB + ISOLINUX + EFI embed)
-    # shellcheck source=stage-boot-logos.sh
-    source "${WSL_HOME}/build/stage-boot-logos.sh"
-    if stage_iso_boot_logos "${WSL_HOME}" "${ISO_STAGE}"; then
-        ok "부팅 로고 적용: aegisrescue-boot-logo-black.png"
-    else
-        warn "부팅 로고 파일을 찾지 못했습니다. AEGIS_BOOT_LOGO=/path/logo.png 지정 가능"
+    # GRUB — Ubuntu-style menu (theme + DejaVu fonts, no background PNG)
+    # shellcheck source=grub-efi-standalone.sh
+    source "${WSL_HOME}/build/grub-efi-standalone.sh"
+    if ! stage_grub_ubuntu_boot "${WSL_HOME}" "${ISO_STAGE}"; then
+        err "GRUB theme/fonts staging failed — sudo apt install grub-common fonts-dejavu-core"
     fi
-
-    # 폰트
-    local font
-    font=$(find /usr/share/grub -name "unicode.pf2" 2>/dev/null | head -1)
-    [[ -n "$font" ]] && cp "$font" "${ISO_STAGE}/boot/grub/fonts/"
+    ok "GRUB menu staged (classic text, no theme PNG)"
 
     # SYSLINUX (BIOS)
     setup_syslinux_wsl
@@ -1269,49 +1299,54 @@ setup_syslinux_wsl() {
     [[ -f "${ISO_STAGE}/isolinux/boot.cat" ]] || touch "${ISO_STAGE}/isolinux/boot.cat"
 
     cat > "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF
-DEFAULT vesamenu.c32
-TIMEOUT 100
-MENU TITLE AegisRescue Beta ${VERSION}
-MENU BACKGROUND splash.png
-EOF
-    cat "${WSL_HOME}/build/isolinux/vesamenu-colors.cfg" >> "${ISO_STAGE}/isolinux/isolinux.cfg"
-    cat >> "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF
-LABEL live
-  MENU LABEL AegisRescue Live (GUI + Installer)
-  KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_GUI}
-LABEL cli
-  MENU LABEL CLI Mode (Text Console)
+DEFAULT 1
+PROMPT 1
+TIMEOUT 300
+DISPLAY boot.txt
+
+LABEL 1
   KERNEL /boot/vmlinuz
   APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_CLI}
-LABEL forensic
-  MENU LABEL Forensic Mode (CLI)
+LABEL 2
+  KERNEL /boot/vmlinuz
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_GUI}
+LABEL 3
   KERNEL /boot/vmlinuz
   APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_FORENSIC}
-LABEL airgap
-  MENU LABEL Air-Gap Mode (CLI)
+LABEL 4
   KERNEL /boot/vmlinuz
   APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_AIRGAP}
-LABEL debug
-  MENU LABEL Debug (verbose)
-  KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_COMMON} debug verbose systemd.log_level=debug
+EOF
+
+    cat > "${ISO_STAGE}/isolinux/boot.txt" <<EOF
+
+  AegisRescue Beta ${VERSION}
+  ===========================
+  boot: 1 or Enter = CLI (safe)
+  boot: 2 = Live GUI
+  boot: 3 = Forensic   4 = Air-Gap
+
 EOF
 }
 
 create_efi_wsl() {
     local efi_img="${ISO_STAGE}/EFI/BOOT/efiboot.img"
+    local efi_bin="${ISO_STAGE}/EFI/BOOT/BOOTX64.EFI"
     # shellcheck source=grub-efi-standalone.sh
     source "${WSL_HOME}/build/grub-efi-standalone.sh"
 
-    log "GRUB EFI 스탠드얼론 이미지 생성 중 (로고/폰트 포함)..."
-    if [[ ! -f "${ISO_STAGE}/boot/grub/aegis-bg.png" && ! -f "${ISO_STAGE}/boot/grub/themes/aegis/aegis-bg.png" ]]; then
-        warn "GRUB aegis-bg.png 없음 — ISO 재빌드 전 stage_iso_boot_logos 확인"
-    fi
+    rm -f "${efi_img}" "${efi_bin}"
+    log "GRUB EFI (Ubuntu-style menu) 생성 중..."
     if create_grub_efi_standalone "${ISO_STAGE}" "${ISO_STAGE}/boot/grub/grub.cfg" "${efi_img}"; then
-        ok "EFI 이미지 생성됨"
+        mkdir -p "${ISO_STAGE}/EFI/BOOT"
+        if create_grub_efi_boot_file "${ISO_STAGE}" "${ISO_STAGE}/boot/grub/grub.cfg" "${efi_bin}"; then
+            ok "EFI: efiboot.img + EFI/BOOT/BOOTX64.EFI"
+        else
+            ok "EFI 이미지 생성됨 (efiboot.img)"
+        fi
     else
-        warn "EFI 이미지 생성 실패 — grub-mkstandalone 확인"
+        rm -f "${efi_img}" "${efi_bin}"
+        err "EFI 이미지 생성 실패 — grub-mkstandalone 로그 확인"
     fi
 }
 

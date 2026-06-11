@@ -19,7 +19,9 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             if let Some(window) = app.get_window("main") {
-                let _ = window.set_minimizable(false);
+                let _ = window.set_minimizable(true);
+                let _ = window.set_maximizable(true);
+                let _ = window.set_resizable(true);
             }
             Ok(())
         })
@@ -41,6 +43,7 @@ fn main() {
             commands::start_installation,
             commands::get_install_progress,
             // 유틸
+            commands::get_installer_build_info,
             commands::get_system_info,
             commands::reboot_system,
             commands::open_aegiscenter,
