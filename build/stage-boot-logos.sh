@@ -4,7 +4,21 @@
 # Full-screen black canvas + centered logo (~Windows boot splash proportions)
 AEGIS_BOOT_CANVAS_W="${AEGIS_BOOT_CANVAS_W:-1920}"
 AEGIS_BOOT_CANVAS_H="${AEGIS_BOOT_CANVAS_H:-1080}"
-AEGIS_BOOT_LOGO_PCT="${AEGIS_BOOT_LOGO_PCT:-15}"
+AEGIS_BOOT_LOGO_PCT="${AEGIS_BOOT_LOGO_PCT:-8}"
+# Plymouth displays PNG 1:1 — smaller canvas keeps logo modest on large displays
+AEGIS_PLYMOUTH_CANVAS_W="${AEGIS_PLYMOUTH_CANVAS_W:-960}"
+AEGIS_PLYMOUTH_CANVAS_H="${AEGIS_PLYMOUTH_CANVAS_H:-540}"
+
+resolve_boot_mark_svg() {
+    local project_root="$1"
+    local boot_mark="${project_root}/docs/assets/aegisrescue-boot-mark.svg"
+    local full_logo="${project_root}/docs/assets/aegisrescue-logo.svg"
+    if [[ -f "$boot_mark" ]]; then
+        printf '%s\n' "$boot_mark"
+    elif [[ -f "$full_logo" ]]; then
+        printf '%s\n' "$full_logo"
+    fi
+}
 
 # Logo on black canvas — pct = logo width as % of canvas width (e.g. 15)
 prepare_centered_boot_logo_png() {
@@ -68,7 +82,8 @@ stage_iso_boot_logos() {
     logo_src="$(resolve_boot_logo "${project_root}" || true)"
     [[ -n "$logo_src" ]] || return 1
 
-    local logo_svg="${project_root}/docs/assets/aegisrescue-logo.svg"
+    local logo_svg
+    logo_svg="$(resolve_boot_mark_svg "${project_root}")"
     mkdir -p "${iso_stage}/boot/grub/themes/aegis" "${iso_stage}/isolinux"
 
     prepare_centered_boot_logo_png "$logo_src" "${iso_stage}/boot/grub/aegis-bg.png" \
@@ -90,17 +105,18 @@ install_chroot_boot_logos() {
     logo_src="$(resolve_boot_logo "${project_root}" || true)"
     [[ -n "$logo_src" ]] || return 1
 
-    local logo_svg="${project_root}/docs/assets/aegisrescue-logo.svg"
+    local logo_svg
+    logo_svg="$(resolve_boot_mark_svg "${project_root}")"
     mkdir -p "${chroot}/usr/share/plymouth/themes/aegisrescue"
     cp "${project_root}/build/plymouth/aegisrescue.plymouth" \
        "${chroot}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
     cp "${project_root}/build/plymouth/aegisrescue.script" \
        "${chroot}/usr/share/plymouth/themes/aegisrescue/" 2>/dev/null || true
     cp "$logo_src" "${chroot}/usr/share/aegis/aegisrescue-boot-logo.png"
-    # Plymouth + desktop: 1920×1080 black canvas, logo ~15% width (Windows-like)
+    # Plymouth: smaller canvas (1:1 pixel display) + shield-only mark
     if ! prepare_centered_boot_logo_png "$logo_src" \
         "${chroot}/usr/share/plymouth/themes/aegisrescue/aegis-bg.png" \
-        "${AEGIS_BOOT_CANVAS_W}" "${AEGIS_BOOT_CANVAS_H}" "${AEGIS_BOOT_LOGO_PCT}" "$logo_svg"; then
+        "${AEGIS_PLYMOUTH_CANVAS_W}" "${AEGIS_PLYMOUTH_CANVAS_H}" "${AEGIS_BOOT_LOGO_PCT}" "$logo_svg"; then
         echo "warn: Plymouth aegis-bg.png compositing failed — check imagemagick" >&2
     fi
     if ! prepare_centered_boot_logo_png "$logo_src" \
