@@ -20,6 +20,14 @@ EOF
         chroot "${chroot}" usermod -aG aegis aegis 2>/dev/null || true
     echo "aegis:aegis" | chroot "${chroot}" chpasswd 2>/dev/null || true
 
+    # Live recovery: installer needs root for disk ops; GUI session stays as aegis
+    mkdir -p "${chroot}/etc/sudoers.d"
+    cat > "${chroot}/etc/sudoers.d/99-aegis-live" <<'EOF'
+# AegisRescue Live ISO only — passwordless sudo for installer elevation
+aegis ALL=(ALL) NOPASSWD: ALL
+EOF
+    chmod 440 "${chroot}/etc/sudoers.d/99-aegis-live"
+
     mkdir -p "${chroot}/home/aegis"
     cat > "${chroot}/etc/profile.d/aegis-boot-hint.sh" <<'EOF'
 # Boot mode hint (GUI Live vs CLI vs Forensic)

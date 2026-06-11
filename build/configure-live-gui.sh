@@ -22,6 +22,7 @@ configure_live_gui() {
         libasound2t64 libssl3 \
         fonts-dejavu-core fonts-liberation fontconfig \
         fonts-noto-core fonts-noto-cjk fonts-noto-cjk-extra fonts-nanum \
+        fonts-noto-emoji fonts-noto-color-emoji \
         dbus-x11 \
         2>&1 | tail -15 || warn "일부 GUI 패키지 설치 실패"
 
@@ -40,6 +41,13 @@ configure_live_gui() {
       <family>Noto Sans CJK SC</family>
       <family>Nanum Gothic</family>
       <family>DejaVu Sans</family>
+    </prefer>
+  </alias>
+  <alias binding="strong">
+    <family>emoji</family>
+    <prefer>
+      <family>Noto Color Emoji</family>
+      <family>Noto Emoji</family>
     </prefer>
   </alias>
 </fontconfig>
@@ -101,7 +109,7 @@ EOF
 Type=Application
 Name=AegisRescue Installer
 Comment=Install AegisRescue to disk or USB
-Exec=aegis-installer
+Exec=/opt/aegis/bin/aegis-installer-gui.sh
 Terminal=false
 Categories=System;
 EOF
@@ -149,7 +157,7 @@ install_live_gui_scripts() {
     local project_root="$2"
 
     mkdir -p "${chroot}/opt/aegis/bin"
-    for script in aegis-live-autostart.sh aegis-xsession.sh aegis-startx.sh aegis-gui-fallback.sh; do
+    for script in aegis-live-autostart.sh aegis-installer-gui.sh aegis-xsession.sh aegis-startx.sh aegis-gui-fallback.sh; do
         cp "${project_root}/packaging/scripts/${script}" \
            "${chroot}/opt/aegis/bin/${script}"
         chmod 755 "${chroot}/opt/aegis/bin/${script}"

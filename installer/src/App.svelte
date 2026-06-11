@@ -91,7 +91,7 @@
   }
 
   :global(body) {
-    font-family: 'Segoe UI', 'Noto Sans KR', 'Noto Sans JP', sans-serif;
+    font-family: 'Segoe UI', 'Noto Sans KR', 'Noto Sans JP', 'Noto Color Emoji', 'Noto Emoji', emoji, sans-serif;
     background: #0d1117;
     color: #e6edf3;
     height: 100vh;

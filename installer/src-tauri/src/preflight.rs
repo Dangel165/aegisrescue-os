@@ -156,16 +156,34 @@ fn check_internet() -> Check {
 }
 
 fn check_root() -> Check {
-    #[cfg(unix)]
-    let is_root = unsafe { libc::getuid() == 0 };
-    #[cfg(not(unix))]
-    let is_root = true;
-
+    let (has_priv, detail) = root_privilege_status();
     Check {
         name: "관리자 권한".into(),
-        status: if is_root { CheckStatus::Pass } else { CheckStatus::Fail },
-        detail: if is_root { "root 권한으로 실행 중".into() } else { "root 권한 필요".into() },
+        status: if has_priv { CheckStatus::Pass } else { CheckStatus::Fail },
+        detail,
         required: true,
+    }
+}
+
+fn root_privilege_status() -> (bool, String) {
+    #[cfg(unix)]
+    {
+        if unsafe { libc::getuid() == 0 } {
+            return (true, "root 권한으로 실행 중".into());
+        }
+        let sudo_ok = std::process::Command::new("sudo")
+            .args(["-n", "true"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if sudo_ok {
+            return (true, "sudo로 관리자 권한 사용 가능".into());
+        }
+        (false, "root 권한 필요 — Live ISO에서는 sudo aegis-installer 실행".into())
+    }
+    #[cfg(not(unix))]
+    {
+        (true, "root 권한으로 실행 중".into())
     }
 }
 

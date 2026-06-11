@@ -9,7 +9,7 @@ esac
 
 export DISPLAY="${DISPLAY:-:0}"
 LOG=/tmp/aegis-autostart.log
-INSTALLER=/opt/aegis/bin/aegis-installer
+INSTALLER=/opt/aegis/bin/aegis-installer-gui.sh
 SPLASH=/usr/share/aegis/aegis-boot-splash.png
 GUARD=/run/aegis/installer-launched
 
