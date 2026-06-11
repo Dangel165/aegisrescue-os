@@ -36,7 +36,7 @@ prepare_centered_boot_logo_png() {
         tmp_logo="$(mktemp /tmp/aegis-logo.XXXXXX.png)"
         rsvg-convert -w "${logo_w}" "$src_svg" -o "${tmp_logo}" 2>/dev/null || true
         if [[ -s "$tmp_logo" ]] && command -v convert >/dev/null 2>&1; then
-            convert -size "${canvas_w}x${canvas_h}" xc:black \
+            convert -size "${canvas_w}x${canvas_h}" gradient:'#3a3a3a-#0a0a0a' \
                 "$tmp_logo" -gravity center -composite PNG:"$dst_png" 2>/dev/null && {
                 rm -f "$tmp_logo"
                 return 0
@@ -46,7 +46,7 @@ prepare_centered_boot_logo_png() {
     fi
 
     if command -v convert >/dev/null 2>&1; then
-        convert -size "${canvas_w}x${canvas_h}" xc:black \
+        convert -size "${canvas_w}x${canvas_h}" gradient:'#3a3a3a-#0a0a0a' \
             \( "$src_png" -resize "${logo_w}x" \) \
             -gravity center -composite PNG:"$dst_png" 2>/dev/null && return 0
     fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build GRUB EFI standalone image with embedded cfg, font, theme, and boot logo.
+# Build GRUB EFI standalone image with embedded cfg, font, and boot logo.
 
 create_grub_efi_standalone() {
     local iso_stage="$1"
@@ -8,8 +8,9 @@ create_grub_efi_standalone() {
 
     command -v grub-mkstandalone >/dev/null 2>&1 || return 1
 
-    local efi_tmp
+    local efi_tmp logfile
     efi_tmp="$(mktemp /tmp/aegis-grubx64.XXXXXX.efi)"
+    logfile="$(mktemp /tmp/aegis-grub-mkstandalone.XXXXXX.log)"
     local -a embed=(
         "boot/grub/grub.cfg=${grub_cfg_src}"
     )
@@ -20,22 +21,24 @@ create_grub_efi_standalone() {
     local bg="${iso_stage}/boot/grub/aegis-bg.png"
     [[ -f "$bg" ]] && embed+=("boot/grub/aegis-bg.png=${bg}")
 
-    local theme_txt="${iso_stage}/boot/grub/themes/aegis/theme.txt"
-    [[ -f "$theme_txt" ]] && embed+=("boot/grub/themes/aegis/theme.txt=${theme_txt}")
-
     local theme_bg="${iso_stage}/boot/grub/themes/aegis/aegis-bg.png"
-    [[ -f "$theme_bg" ]] && embed+=("boot/grub/themes/aegis/aegis-bg.png=${theme_bg}")
+    if [[ ! -f "$bg" && -f "$theme_bg" ]]; then
+        embed+=("boot/grub/aegis-bg.png=${theme_bg}")
+    fi
 
+    # Do NOT pass --modules — let mkstandalone pull deps from grub.cfg (linux, search, efi_gop, …)
     if ! grub-mkstandalone \
         --format=x86_64-efi \
         --output="${efi_tmp}" \
         --locales="" \
         --fonts="" \
-        --modules="gfxterm gfxmenu png all_video" \
-        "${embed[@]}" 2>/dev/null; then
-        rm -f "${efi_tmp}"
+        "${embed[@]}" >"${logfile}" 2>&1; then
+        echo "grub-mkstandalone failed:" >&2
+        tail -20 "${logfile}" >&2 || true
+        rm -f "${efi_tmp}" "${logfile}"
         return 1
     fi
+    rm -f "${logfile}"
 
     dd if=/dev/zero bs=1M count=10 of="${efi_img}" 2>/dev/null
     mkfs.vfat "${efi_img}" 2>/dev/null || { rm -f "${efi_tmp}"; return 1; }

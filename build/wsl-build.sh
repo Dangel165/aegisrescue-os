@@ -1161,6 +1161,9 @@ create_efi_wsl() {
     source "${WSL_HOME}/build/grub-efi-standalone.sh"
 
     log "GRUB EFI 스탠드얼론 이미지 생성 중 (로고/폰트 포함)..."
+    if [[ ! -f "${ISO_STAGE}/boot/grub/aegis-bg.png" && ! -f "${ISO_STAGE}/boot/grub/themes/aegis/aegis-bg.png" ]]; then
+        warn "GRUB aegis-bg.png 없음 — ISO 재빌드 전 stage_iso_boot_logos 확인"
+    fi
     if create_grub_efi_standalone "${ISO_STAGE}" "${ISO_STAGE}/boot/grub/grub.cfg" "${efi_img}"; then
         ok "EFI 이미지 생성됨"
     else
