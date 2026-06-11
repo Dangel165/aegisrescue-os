@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=AegisRescue Live
+Comment=AegisRescue Openbox session with installer
+Exec=/opt/aegis/bin/aegis-xsession
+Type=XSession
+DesktopNames=Openbox

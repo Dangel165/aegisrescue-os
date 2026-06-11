@@ -382,7 +382,7 @@ EOF
     # shellcheck source=configure-live-gui.sh
     source "${SCRIPT_DIR}/configure-live-gui.sh"
     install_live_gui_scripts "${CHROOT_DIR}" "${PROJECT_ROOT}"
-    configure_live_gui "${CHROOT_DIR}"
+    configure_live_gui "${CHROOT_DIR}" "${PROJECT_ROOT}"
 
     chroot "${CHROOT_DIR}" systemctl enable aegisd.service        2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-preflight.service 2>/dev/null || true

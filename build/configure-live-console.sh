@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Console/login setup for Live ISO — multi-user target, tty1 autologin, no DM required.
+# Console/login setup — CLI modes only (GUI Live uses LightDM autologin).
 configure_live_console() {
     local chroot="$1"
 
+    # tty1 autologin only for CLI / Forensic / Air-Gap (not GUI Live — LightDM owns the display)
     mkdir -p "${chroot}/etc/systemd/system/getty@tty1.service.d"
     cat > "${chroot}/etc/systemd/system/getty@tty1.service.d/autologin.conf" <<'EOF'
+[Unit]
+ConditionKernelCommandLine=aegis.cli=1
+
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin aegis --noclear --keep-baud 115200,38400,9600 %I $TERM
@@ -31,20 +35,14 @@ fi
 EOF
 
     cat > "${chroot}/home/aegis/.bash_profile" <<'EOF'
-# GUI Live: startx runs from /etc/profile.d/aegis-start-gui.sh before this file.
+# CLI modes only — GUI Live uses LightDM (no tty1 shell on boot).
 if grep -Eq '(^| )aegis\.cli=1($| )' /proc/cmdline 2>/dev/null; then
     if [ -f /etc/motd-aegis ]; then cat /etc/motd-aegis; fi
     if [ -f /etc/profile.d/aegis-boot-hint.sh ]; then . /etc/profile.d/aegis-boot-hint.sh; fi
     echo ""
     echo "  Boot mode: ${_AEGIS_BOOT:-CLI}"
-    echo "  Commands: aegis | aegis-installer | aegiscenter (needs: startx)"
-    echo ""
-elif [ -z "${DISPLAY:-}" ] && [ -f /tmp/aegis-startx.log ]; then
-    echo ""
-    echo "  GUI start failed:"
-    echo "    /tmp/aegis-startx.log"
-    echo "    /var/log/Xorg.0.log"
-    echo "  Fallback: Alt+F2 for CLI  |  retry: startx -- :0 vt1"
+    echo "  Commands: aegis | aegis-installer | aegiscenter"
+    echo "  Manual GUI: /opt/aegis/bin/aegis-startx.sh"
     echo ""
 fi
 EOF
@@ -55,12 +53,11 @@ EOF
 
   AegisRescue Beta 0.1.0 — Live Recovery OS
   Boot menu: Live (GUI+Installer) | CLI Mode | Forensic | Air-Gap
-  GUI Live: X on tty1  |  Fallback CLI: Alt+F2  |  startx log: /tmp/aegis-startx.log
+  GUI Live: LightDM autologin → installer  |  CLI: Alt+F2 (tty2)
 
 EOF
 
     chroot "${chroot}" systemctl enable getty@tty1.service 2>/dev/null || true
-    chroot "${chroot}" systemctl mask plymouth-quit-wait.service 2>/dev/null || true
 }
 
 # Shared kernel cmdline (keep in sync with build/grub/grub.cfg).

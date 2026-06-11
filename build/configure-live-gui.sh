@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Live ISO GUI — startx + Openbox on tty1 (VirtualBox-safe, no LightDM)
+# Live ISO GUI — LightDM autologin → Openbox → installer (Ubuntu-style)
 configure_live_gui() {
     local chroot="$1"
+    local project_root="${2:-}"
 
-    log "Live GUI 패키지 설치 중 (Xorg/startx, Openbox, WebKitGTK)..."
+    log "Live GUI 패키지 설치 중 (LightDM, Xorg, Openbox, WebKitGTK)..."
 
     chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
         apt-get install -y --no-install-recommends \
+        lightdm lightdm-gtk-greeter \
         xserver-xorg-core xserver-xorg xserver-xorg-legacy \
         xserver-xorg-video-vesa xserver-xorg-video-fbdev \
         xserver-xorg-video-vmware xserver-xorg-video-modesetting \
@@ -21,12 +23,11 @@ configure_live_gui() {
         fonts-dejavu-core fontconfig dbus-x11 \
         2>&1 | tail -15 || warn "일부 GUI 패키지 설치 실패"
 
-    # VirtualBox/VM: let Xorg auto-pick vmware/modesetting (VMSVGA). VESA only via aegis-startx fallback.
     rm -f "${chroot}/etc/X11/xorg.conf.d/99-aegis-vm.conf" 2>/dev/null || true
 
     mkdir -p "${chroot}/etc/modules-load.d"
     cat > "${chroot}/etc/modules-load.d/aegis-vm-gfx.conf" <<'EOF'
-# VirtualBox VMSVGA / VMware — needed when GUI Live boot omits nomodeset
+# VirtualBox VMSVGA / VMware
 vmwgfx
 drm_kms_helper
 EOF
@@ -37,18 +38,28 @@ allowed_users=anybody
 needs_root_rights=yes
 EOF
 
-    # Non-root startx on autologin tty (VirtualBox/live ISO — logind seat often insufficient)
     {
         echo 'xserver-xorg-legacy xserver-xorg-legacy/xwrapper/allowed_users select Anybody'
         echo 'xserver-xorg-legacy xserver-xorg-legacy/xwrapper/allowed_users seen true'
     } | chroot "${chroot}" debconf-set-selections 2>/dev/null || true
     chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive \
         dpkg-reconfigure -f noninteractive xserver-xorg-legacy 2>/dev/null || true
-    # Re-apply after legacy postinst (VMs need root Xorg without KMS)
     cat > "${chroot}/etc/X11/Xwrapper.config" <<'EOF'
 allowed_users=anybody
 needs_root_rights=yes
 EOF
+
+    echo '/usr/sbin/lightdm' > "${chroot}/etc/X11/default-display-manager"
+
+    # LightDM — autologin aegis → Openbox session (installer autostarts in openbox)
+    mkdir -p "${chroot}/etc/lightdm/lightdm.conf.d"
+    mkdir -p "${chroot}/usr/share/xsessions"
+    if [[ -n "$project_root" && -f "${project_root}/packaging/lightdm/aegis-lightdm.conf" ]]; then
+        cp "${project_root}/packaging/lightdm/aegis-lightdm.conf" \
+           "${chroot}/etc/lightdm/lightdm.conf.d/50-aegis.conf"
+        cp "${project_root}/packaging/lightdm/aegis-openbox.desktop" \
+           "${chroot}/usr/share/xsessions/aegis-openbox.desktop"
+    fi
 
     mkdir -p "${chroot}/usr/share/applications"
     cat > "${chroot}/usr/share/applications/aegis-installer.desktop" <<'EOF'
@@ -77,10 +88,20 @@ EOF
     cat > "${chroot}/etc/tmpfiles.d/aegis-run.conf" <<'EOF'
 d /run/aegis 0775 root aegis -
 EOF
+
     chroot "${chroot}" systemctl enable getty@tty2.service 2>/dev/null || true
-    chroot "${chroot}" systemctl set-default multi-user.target 2>/dev/null || true
-    chroot "${chroot}" systemctl disable lightdm.service 2>/dev/null || true
-    chroot "${chroot}" systemctl mask lightdm.service 2>/dev/null || true
+
+    # GUI Live: graphical.target + LightDM (CLI boot uses multi-user.target via kernel cmdline)
+    chroot "${chroot}" systemctl set-default graphical.target 2>/dev/null || true
+    chroot "${chroot}" systemctl unmask lightdm.service 2>/dev/null || true
+    chroot "${chroot}" systemctl enable lightdm.service 2>/dev/null || true
+    chroot "${chroot}" systemctl enable aegis-installer.service 2>/dev/null || true
+
+    # Plymouth handoff to LightDM (like Ubuntu)
+    chroot "${chroot}" systemctl unmask plymouth-quit-wait.service 2>/dev/null || true
+
+    # Remove legacy startx-on-login hook
+    rm -f "${chroot}/etc/profile.d/aegis-start-gui.sh" 2>/dev/null || true
 
     chroot "${chroot}" plymouth-set-default-theme aegisrescue 2>/dev/null || true
 }
@@ -96,22 +117,11 @@ install_live_gui_scripts() {
         chmod 755 "${chroot}/opt/aegis/bin/${script}"
     done
 
-    cp "${project_root}/packaging/scripts/aegis-start-gui.sh" \
-       "${chroot}/etc/profile.d/aegis-start-gui.sh"
-    chmod 755 "${chroot}/etc/profile.d/aegis-start-gui.sh"
-
     mkdir -p "${chroot}/home/aegis/.config/openbox" "${chroot}/etc/skel/.config/openbox"
     ln -sf /opt/aegis/bin/aegis-live-autostart.sh \
         "${chroot}/home/aegis/.config/openbox/autostart"
     ln -sf /opt/aegis/bin/aegis-live-autostart.sh \
         "${chroot}/etc/skel/.config/openbox/autostart"
-
-    cat > "${chroot}/home/aegis/.xinitrc" <<'EOF'
-#!/bin/sh
-exec /opt/aegis/bin/aegis-xsession
-EOF
-    cp "${chroot}/home/aegis/.xinitrc" "${chroot}/etc/skel/.xinitrc"
-    chmod 755 "${chroot}/home/aegis/.xinitrc" "${chroot}/etc/skel/.xinitrc"
 
     chroot "${chroot}" chown -R aegis:aegis /home/aegis 2>/dev/null || true
 }

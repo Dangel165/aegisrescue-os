@@ -3,11 +3,15 @@ Description=AegisRescue Installer Wizard
 Documentation=https://aegisrescue.io/docs/installer
 After=display-manager.service
 ConditionPathExists=!/var/lib/aegis/.installed
+ConditionKernelCommandLine=!aegis.cli
 
 [Service]
 Type=simple
 User=aegis
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/aegis/.Xauthority
+ExecStartPre=/bin/sh -c '! pgrep -x aegis-installer >/dev/null 2>&1'
+ExecStartPre=/bin/sleep 2
 ExecStart=/opt/aegis/bin/aegis-installer
 Restart=on-failure
 RestartSec=3

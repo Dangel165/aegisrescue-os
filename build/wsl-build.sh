@@ -962,7 +962,7 @@ EOF
     # shellcheck source=configure-live-gui.sh
     source "${WSL_HOME}/build/configure-live-gui.sh"
     install_live_gui_scripts "${CHROOT_DIR}" "${WSL_HOME}"
-    configure_live_gui "${CHROOT_DIR}"
+    configure_live_gui "${CHROOT_DIR}" "${WSL_HOME}"
 
     chroot "${CHROOT_DIR}" systemctl enable aegisd.service 2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-preflight.service 2>/dev/null || true
