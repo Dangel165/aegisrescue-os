@@ -17,25 +17,48 @@ EOF
     echo "aegis:aegis" | chroot "${chroot}" chpasswd 2>/dev/null || true
 
     mkdir -p "${chroot}/home/aegis"
+    cat > "${chroot}/etc/profile.d/aegis-boot-hint.sh" <<'EOF'
+# Boot mode hint (GUI Live vs CLI vs Forensic)
+if grep -Eq '(^| )aegis\.cli=1($| )' /proc/cmdline 2>/dev/null; then
+    _AEGIS_BOOT="CLI"
+elif grep -Eq '(^| )aegis\.mode=forensic($| )' /proc/cmdline 2>/dev/null; then
+    _AEGIS_BOOT="Forensic (CLI)"
+elif grep -Eq '(^| )aegis\.mode=airgap($| )' /proc/cmdline 2>/dev/null; then
+    _AEGIS_BOOT="Air-Gap (CLI)"
+else
+    _AEGIS_BOOT="Live GUI"
+fi
+EOF
+
     cat > "${chroot}/home/aegis/.bash_profile" <<'EOF'
 if [ -f /etc/motd-aegis ]; then cat /etc/motd-aegis; fi
+if [ -f /etc/profile.d/aegis-boot-hint.sh ]; then . /etc/profile.d/aegis-boot-hint.sh; fi
 echo ""
-echo "  AegisRescue Beta — CLI: aegis   GUI: aegiscenter"
+echo "  Boot mode: ${_AEGIS_BOOT:-unknown}"
+if grep -Eq '(^| )aegis\.cli=1($| )' /proc/cmdline 2>/dev/null; then
+    echo "  CLI: aegis | aegis-installer | aegiscenter (manual, needs X)"
+else
+    echo "  GUI: Alt+F7  |  CLI: Alt+F1  |  aegiscenter | aegis-installer"
+fi
 echo ""
 EOF
+    cp "${chroot}/home/aegis/.bash_profile" "${chroot}/etc/skel/.bash_profile"
     chroot "${chroot}" chown aegis:aegis /home/aegis/.bash_profile 2>/dev/null || true
 
     cat > "${chroot}/etc/motd-aegis" <<'EOF'
 
   AegisRescue Beta 0.1.0 — Live Recovery OS
-  User: aegis (auto-login on tty1)  |  Alt+F2/F3: other consoles
+  Boot menu: Live (GUI+Installer) | CLI Mode | Forensic | Air-Gap
+  User: aegis (auto-login tty1)  |  GUI session: Alt+F7
 
 EOF
 
-    chroot "${chroot}" systemctl set-default multi-user.target 2>/dev/null || true
     chroot "${chroot}" systemctl enable getty@tty1.service 2>/dev/null || true
     chroot "${chroot}" systemctl mask plymouth-quit-wait.service 2>/dev/null || true
 }
 
-# Shared kernel cmdline fragment for all Live boot entries.
+# Shared kernel cmdline fragments (keep in sync with build/grub/grub.cfg live_base).
 LIVE_KERNEL_BASE="boot=live components live-media-path=/live nomodeset console=tty1 plymouth.enable=0"
+LIVE_KERNEL_CLI="${LIVE_KERNEL_BASE} aegis.cli=1 systemd.unit=multi-user.target"
+LIVE_KERNEL_FORENSIC="${LIVE_KERNEL_BASE} aegis.mode=forensic noswap aegis.cli=1 systemd.unit=multi-user.target"
+LIVE_KERNEL_AIRGAP="${LIVE_KERNEL_BASE} aegis.mode=airgap aegis.cli=1 systemd.unit=multi-user.target"

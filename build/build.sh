@@ -401,6 +401,11 @@ EOF
     source "${SCRIPT_DIR}/configure-live-console.sh"
     configure_live_console "${CHROOT_DIR}"
 
+    # shellcheck source=configure-live-gui.sh
+    source "${SCRIPT_DIR}/configure-live-gui.sh"
+    install_live_gui_scripts "${CHROOT_DIR}" "${PROJECT_ROOT}"
+    configure_live_gui "${CHROOT_DIR}"
+
     chroot "${CHROOT_DIR}" systemctl enable aegisd.service        2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-preflight.service 2>/dev/null || true
     chroot "${CHROOT_DIR}" systemctl enable aegis-update.timer    2>/dev/null || true
@@ -596,19 +601,24 @@ PROMPT 0
 MENU TITLE AegisRescue Beta ${VERSION}
 
 LABEL live
-  MENU LABEL AegisRescue Live (Standard)
+  MENU LABEL AegisRescue Live (GUI + Installer)
   KERNEL /boot/vmlinuz
   APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE}
 
-LABEL forensic
-  MENU LABEL AegisRescue Forensic Mode
+LABEL cli
+  MENU LABEL AegisRescue CLI Mode (Text Console)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} aegis.mode=forensic noswap
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_CLI}
+
+LABEL forensic
+  MENU LABEL AegisRescue Forensic Mode (CLI)
+  KERNEL /boot/vmlinuz
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_FORENSIC}
 
 LABEL airgap
-  MENU LABEL AegisRescue Air-Gap (Network Isolated)
+  MENU LABEL AegisRescue Air-Gap (CLI)
   KERNEL /boot/vmlinuz
-  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_BASE} aegis.mode=airgap
+  APPEND initrd=/boot/initramfs.img ${LIVE_KERNEL_AIRGAP}
 
 LABEL toram
   MENU LABEL AegisRescue RAM Boot

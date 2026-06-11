@@ -19,6 +19,7 @@ AEGIS_MODE=""
 for param in $(cat /proc/cmdline); do
     case "$param" in
         aegis.mode=*) AEGIS_MODE="${param#aegis.mode=}" ;;
+        aegis.cli=1) AEGIS_MODE="cli" ;;
     esac
 done
 
