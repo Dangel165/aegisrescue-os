@@ -8,9 +8,7 @@ configure_live_console() {
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin aegis --noclear --keep-baud 115200,38400,9600 %I $TERM
-Type=idle
-Restart=always
-RestartSec=0
+Type=simple
 EOF
 
     chroot "${chroot}" groupadd -r aegis 2>/dev/null || true

@@ -77,8 +77,6 @@ EOF
     cat > "${chroot}/etc/tmpfiles.d/aegis-run.conf" <<'EOF'
 d /run/aegis 0775 root aegis -
 EOF
-
-    # tty2 = fallback CLI while GUI runs on tty1
     chroot "${chroot}" systemctl enable getty@tty2.service 2>/dev/null || true
     chroot "${chroot}" systemctl set-default multi-user.target 2>/dev/null || true
     chroot "${chroot}" systemctl disable lightdm.service 2>/dev/null || true
