@@ -1,7 +1,7 @@
 //! 설치 엔진 — 파티션 생성, 파일 시스템 포맷, 파일 복사, 부트로더 설치
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 설치 구성 (프론트엔드에서 전달)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,13 +208,7 @@ impl Installer {
     async fn format_partitions(&self) -> anyhow::Result<()> {
         let dev = &self.config.target_device;
 
-        // 파티션 장치 이름 결정 (sda → sda1, nvme0n1 → nvme0n1p1)
-        let part_suffix = if dev.contains("nvme") || dev.contains("mmcblk") {
-            "p"
-        } else {
-            ""
-        };
-
+        let part_suffix = partition_suffix(dev);
         let efi_part  = format!("{}{}1", dev, part_suffix);
         let sys_part  = format!("{}{}2", dev, part_suffix);
         let data_part = format!("{}{}3", dev, part_suffix);
@@ -265,7 +259,7 @@ impl Installer {
         std::fs::create_dir_all(mount_root)?;
 
         let dev = &self.config.target_device;
-        let part_suffix = if dev.contains("nvme") || dev.contains("mmcblk") { "p" } else { "" };
+        let part_suffix = partition_suffix(dev);
         let sys_part = format!("{}{}2", dev, part_suffix);
         let target = if self.config.security.encrypt_system {
             "/dev/mapper/aegis_root".to_string()
@@ -273,29 +267,33 @@ impl Installer {
             sys_part
         };
 
-        // 시스템 파티션 마운트
-        let _ = tokio::process::Command::new("mount")
-            .args([&target, mount_root])
-            .status().await;
+        run_command("mount", &[&target, mount_root]).await.map_err(|e| {
+            anyhow::anyhow!("시스템 파티션 마운트 실패 ({} → {}): {}", target, mount_root, e)
+        })?;
 
-        // squashfs에서 파일 압축 해제
-        let squashfs = "/run/live/medium/live/filesystem.squashfs";
-        if Path::new(squashfs).exists() {
+        if let Some(squashfs) = resolve_live_squashfs() {
             progress_cb(InstallProgress {
                 phase: InstallPhase::CopyingFiles,
                 percent: 40,
-                message: "시스템 이미지 압축 해제 중...".into(),
+                message: format!("시스템 이미지 압축 해제 중 ({})...", squashfs.display()),
                 error: None,
             });
 
-            let _ = tokio::process::Command::new("unsquashfs")
-                .args(["-f", "-d", mount_root, squashfs])
-                .status().await;
+            run_command("unsquashfs", &["-f", "-d", mount_root, squashfs.to_str().unwrap()])
+                .await
+                .map_err(|e| anyhow::anyhow!("unsquashfs 실패: {}", e))?;
         } else {
-            tracing::warn!("squashfs not found at {}, using rsync fallback", squashfs);
-            // 폴백: 현재 시스템에서 rsync
-            let _ = tokio::process::Command::new("rsync")
-                .args([
+            tracing::warn!("live squashfs not found — rsync fallback from /");
+            progress_cb(InstallProgress {
+                phase: InstallPhase::CopyingFiles,
+                percent: 40,
+                message: "Live 시스템에서 파일 복사 중 (rsync)...".into(),
+                error: None,
+            });
+
+            run_command(
+                "rsync",
+                &[
                     "-aHAX",
                     "--exclude=/proc/*",
                     "--exclude=/sys/*",
@@ -303,10 +301,15 @@ impl Installer {
                     "--exclude=/run/*",
                     "--exclude=/mnt/*",
                     "--exclude=/tmp/*",
-                    "/", mount_root,
-                ])
-                .status().await;
+                    "/",
+                    mount_root,
+                ],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("rsync 실패: {}", e))?;
         }
+
+        ensure_mounted_root(mount_root)?;
 
         progress_cb(InstallProgress {
             phase: InstallPhase::CopyingFiles,
@@ -385,47 +388,60 @@ impl Installer {
 
     async fn configure_system(&self) -> anyhow::Result<()> {
         let root = "/mnt/aegis_install";
+        ensure_mounted_root(root)?;
 
-        // 호스트명 설정
-        std::fs::write(format!("{}/etc/hostname", root), &self.config.hostname)?;
+        std::fs::create_dir_all(format!("{}/etc", root))?;
 
-        // 시간대 설정
-        let _ = tokio::process::Command::new("chroot")
-            .args([root, "ln", "-sf",
-                   &format!("/usr/share/zoneinfo/{}", self.config.timezone),
-                   "/etc/localtime"])
-            .status().await;
+        std::fs::write(format!("{}/etc/hostname", root), &self.config.hostname)
+            .map_err(|e| anyhow::anyhow!("hostname 설정 실패: {}", e))?;
 
-        // 언어 설정
+        let tz_path = format!("/usr/share/zoneinfo/{}", self.config.timezone);
+        if Path::new(&tz_path).exists() {
+            run_command(
+                "chroot",
+                &[
+                    root,
+                    "ln",
+                    "-sf",
+                    &tz_path,
+                    "/etc/localtime",
+                ],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("시간대 설정 실패 ({}): {}", self.config.timezone, e))?;
+        } else {
+            tracing::warn!(timezone = %self.config.timezone, "timezone file missing in target root");
+        }
+
         let locale = lang_to_locale(&self.config.language);
         std::fs::write(
             format!("{}/etc/locale.conf", root),
             format!("LANG={}\n", locale),
-        )?;
+        )
+        .map_err(|e| anyhow::anyhow!("locale.conf 작성 실패: {}", e))?;
 
-        // 키보드
         std::fs::write(
             format!("{}/etc/vconsole.conf", root),
             format!("KEYMAP={}\n", self.config.keyboard),
-        )?;
+        )
+        .map_err(|e| anyhow::anyhow!("vconsole.conf 작성 실패: {}", e))?;
 
-        // 보안 정책 복사
         let policy_src = "/usr/share/aegis/policy.toml";
         let policy_dst = format!("{}/etc/aegis/policy.toml", root);
         std::fs::create_dir_all(format!("{}/etc/aegis", root))?;
         if Path::new(policy_src).exists() {
-            std::fs::copy(policy_src, &policy_dst)?;
+            std::fs::copy(policy_src, &policy_dst)
+                .map_err(|e| anyhow::anyhow!("policy.toml 복사 실패: {}", e))?;
         }
 
-        // 기본 네트워크 모드 설정
         let policy_content = format!(
             "# AegisRescue Policy (auto-generated)\n\n\
              [network]\ndefault = \"{}\"\n",
             self.config.default_network_mode
         );
-        std::fs::write(&policy_dst, policy_content)?;
+        std::fs::write(&policy_dst, policy_content)
+            .map_err(|e| anyhow::anyhow!("policy.toml 작성 실패: {}", e))?;
 
-        // fstab 생성
         self.write_fstab(root).await?;
 
         Ok(())
@@ -512,4 +528,52 @@ fn lang_to_locale(lang: &str) -> &str {
         "es" => "es_ES.UTF-8",
         _    => "en_US.UTF-8",
     }
+}
+
+fn partition_suffix(dev: &str) -> &'static str {
+    if dev.contains("nvme") || dev.contains("mmcblk") {
+        "p"
+    } else {
+        ""
+    }
+}
+
+fn resolve_live_squashfs() -> Option<PathBuf> {
+    const CANDIDATESTS: &[&str] = &[
+        "/run/live/medium/live/filesystem.squashfs",
+        "/run/live/rootfs/filesystem.squashfs",
+        "/lib/live/mount/medium/live/filesystem.squashfs",
+        "/lib/live/mount/medium/live/filesystem.squashfs",
+        "/cdrom/live/filesystem.squashfs",
+        "/run/initramfs/live/filesystem.squashfs",
+    ];
+    CANDIDATESTS
+        .iter()
+        .map(Path::new)
+        .find(|p| p.is_file())
+        .map(|p| p.to_path_buf())
+}
+
+async fn run_command(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
+    let status = tokio::process::Command::new(cmd)
+        .args(args)
+        .status()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to run {}: {}", cmd, e))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("{} {:?} failed (exit {:?})", cmd, args, status.code()))
+    }
+}
+
+fn ensure_mounted_root(root: &str) -> anyhow::Result<()> {
+    let etc = format!("{}/etc", root);
+    if Path::new(&etc).is_dir() {
+        return Ok(());
+    }
+    Err(anyhow::anyhow!(
+        "설치 대기 경로에 시스템이 없습니다 ({etc}). \
+         파티션 마운트 또는 squashfs 추출이 실패했을 수 있습니다."
+    ))
 }

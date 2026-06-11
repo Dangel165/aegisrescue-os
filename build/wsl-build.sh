@@ -911,9 +911,11 @@ EOF
     done
 
     # 설정 파일
-    mkdir -p "${CHROOT_DIR}/etc/aegis"
+    mkdir -p "${CHROOT_DIR}/etc/aegis" "${CHROOT_DIR}/usr/share/aegis"
     cp "${WSL_HOME}/packaging/policy/policy.toml" \
        "${CHROOT_DIR}/etc/aegis/policy.toml" 2>/dev/null || true
+    cp "${WSL_HOME}/packaging/policy/policy.toml" \
+       "${CHROOT_DIR}/usr/share/aegis/policy.toml" 2>/dev/null || true
     cp "${WSL_HOME}/security/nftables/airgap.nft" \
        "${CHROOT_DIR}/etc/nftables.conf" 2>/dev/null || true
     mkdir -p "${CHROOT_DIR}/etc/apparmor.d"

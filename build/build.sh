@@ -324,9 +324,11 @@ EOF
     done
 
     # 설정 파일
-    mkdir -p "${CHROOT_DIR}/etc/aegis"
+    mkdir -p "${CHROOT_DIR}/etc/aegis" "${CHROOT_DIR}/usr/share/aegis"
     cp "${PROJECT_ROOT}/packaging/policy/policy.toml" \
        "${CHROOT_DIR}/etc/aegis/policy.toml" 2>/dev/null || true
+    cp "${PROJECT_ROOT}/packaging/policy/policy.toml" \
+       "${CHROOT_DIR}/usr/share/aegis/policy.toml" 2>/dev/null || true
 
     # nftables (기본: Air-Gap)
     cp "${PROJECT_ROOT}/security/nftables/airgap.nft" \
