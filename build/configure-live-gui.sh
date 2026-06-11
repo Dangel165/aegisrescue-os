@@ -20,8 +20,32 @@ configure_live_gui() {
         libgtk-3-0 libayatana-appindicator3-1 librsvg2-2 \
         libgl1 libegl1 libgbm1 libxcomposite1 libxdamage1 libxrandr2 \
         libasound2t64 libssl3 \
-        fonts-dejavu-core fontconfig dbus-x11 \
+        fonts-dejavu-core fonts-liberation fontconfig \
+        fonts-noto-core fonts-noto-cjk fonts-noto-cjk-extra fonts-nanum \
+        dbus-x11 \
         2>&1 | tail -15 || warn "일부 GUI 패키지 설치 실패"
+
+    chroot "${chroot}" fc-cache -f 2>/dev/null || true
+
+    mkdir -p "${chroot}/etc/fonts/conf.d"
+    cat > "${chroot}/etc/fonts/conf.d/65-aegis-cjk.conf" <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <alias binding="strong">
+    <family>sans-serif</family>
+    <prefer>
+      <family>Noto Sans CJK KR</family>
+      <family>Noto Sans CJK JP</family>
+      <family>Noto Sans CJK SC</family>
+      <family>Nanum Gothic</family>
+      <family>DejaVu Sans</family>
+    </prefer>
+  </alias>
+</fontconfig>
+EOF
+
+    chroot "${chroot}" locale-gen ko_KR.UTF-8 en_US.UTF-8 ja_JP.UTF-8 zh_CN.UTF-8 2>/dev/null || true
 
     rm -f "${chroot}/etc/X11/xorg.conf.d/99-aegis-vm.conf" 2>/dev/null || true
 
