@@ -27,3 +27,10 @@ chrono       = { workspace = true }
 uuid         = { workspace = true }
 goblin       = { workspace = true }
 walkdir      = { workspace = true }
+tract-onnx   = { version = "0.21", optional = true }
+ndarray      = { version = "0.16", optional = true }
+
+[features]
+default = []
+# glibc/dev builds — musl ISO tools use .aegismodel only
+onnx = ["tract-onnx", "ndarray"]

@@ -18,7 +18,7 @@ pub async fn capture_evidence(source: &Path, output_dir: &Path) -> anyhow::Resul
         .and_then(|s| s.to_str())
         .unwrap_or("evidence");
     let image_name = format!("{}_evidence_{}.img", source_name, ts);
-    let image_path = output_dir.join(&image_name);
+    let mut image_path = output_dir.join(&image_name);
 
     tracing::info!(
         source = %source.display(),
@@ -31,7 +31,8 @@ pub async fn capture_evidence(source: &Path, output_dir: &Path) -> anyhow::Resul
         capture_with_dc3dd(source, &image_path).await
             .or_else(|_| capture_with_dd(source, &image_path))?;
     } else {
-        capture_directory(source, &image_path)?;
+        let archive_path = capture_directory(source, &image_path)?;
+        image_path = archive_path;
     }
 
     // 캡처 후 해시
@@ -98,7 +99,7 @@ fn capture_with_dd(source: &Path, dest: &Path) -> anyhow::Result<()> {
     }
 }
 
-fn capture_directory(source: &Path, dest: &Path) -> anyhow::Result<()> {
+fn capture_directory(source: &Path, dest: &Path) -> anyhow::Result<PathBuf> {
     let archive = dest.with_extension("tar.gz");
     let archive_arg = archive.to_string_lossy().into_owned();
     let parent_arg = source.parent().unwrap_or(source).to_string_lossy().into_owned();
@@ -119,7 +120,7 @@ fn capture_directory(source: &Path, dest: &Path) -> anyhow::Result<()> {
         .status()?;
 
     if status.success() {
-        Ok(())
+        Ok(archive)
     } else {
         Err(anyhow::anyhow!("tar failed"))
     }

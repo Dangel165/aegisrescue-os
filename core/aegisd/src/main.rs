@@ -12,6 +12,7 @@ mod db;
 mod job;
 mod network;
 mod quarantine;
+mod quarantine_markers;
 mod server;
 mod state;
 
@@ -74,8 +75,22 @@ async fn main() -> anyhow::Result<()> {
     // 공유 상태 초기화
     let state = state::AppState::new(policy, args.db).await?;
 
+    state
+        .emit_event(
+            aegis_common::types::EventType::SystemStartup,
+            aegis_common::types::EventSeverity::Info,
+            "aegisd started",
+            serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }),
+        )
+        .await;
+
     // 네트워크 격리 정책 적용
     network::apply_policy(&state.policy().network).await;
+
+    quarantine_markers::spawn_marker_watcher(state.clone());
+    if let Err(e) = quarantine_markers::process_markers(&state).await {
+        tracing::warn!(error = %e, "initial quarantine marker scan failed");
+    }
 
     // SIGTERM / SIGINT 처리
     let state_clone = state.clone();

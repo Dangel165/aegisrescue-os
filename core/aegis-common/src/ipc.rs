@@ -13,6 +13,8 @@ pub const AEGIS_SOCKET_PATH: &str = "/run/aegis/aegisd.sock";
 pub enum DaemonRequest {
     /// 새 작업 제출
     SubmitJob { job_type: JobType },
+    /// 실시간 이벤트 스트림 구독 (응답 후 DaemonStream JSON 라인 전송)
+    SubscribeEvents,
     /// 작업 상태 조회
     GetJob { job_id: Uuid },
     /// 작업 목록 조회
@@ -42,6 +44,7 @@ pub enum DaemonRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DaemonResponse {
     Ok,
+    Subscribed,
     JobSubmitted { job_id: Uuid },
     Job(AegisJob),
     Jobs(Vec<AegisJob>),

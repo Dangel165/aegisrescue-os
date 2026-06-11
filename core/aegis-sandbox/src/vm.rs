@@ -1,6 +1,9 @@
 //! microVM 기반 L2 격리 (QEMU/Firecracker)
 
+use crate::fc_api::{firecracker_available, FirecrackerSession};
 use std::path::Path;
+
+const VM_DIR: &str = "/usr/share/aegis/vm";
 
 pub async fn run_in_vm(
     sample: &Path,
@@ -8,14 +11,14 @@ pub async fn run_in_vm(
 ) -> anyhow::Result<serde_json::Value> {
     tracing::info!("Starting microVM sandbox (L2)");
 
-    // Firecracker 우선, 없으면 QEMU 폴백
-    if is_firecracker_available() {
+    if firecracker_available() && vm_artifacts_ready() {
         run_with_firecracker(sample, timeout_secs).await
-    } else if is_qemu_available() {
+    } else if is_qemu_available() && Path::new(VM_DIR).join("analysis.qcow2").exists() {
         run_with_qemu(sample, timeout_secs).await
     } else {
         Err(anyhow::anyhow!(
-            "No microVM backend available (install firecracker or qemu)"
+            "L2 sandbox unavailable: need firecracker+{}/vmlinux.bin+rootfs.ext4 or qemu+analysis.qcow2 (run tools/build-vm-artifacts.sh)",
+            VM_DIR
         ))
     }
 }
@@ -24,39 +27,21 @@ async fn run_with_firecracker(
     sample: &Path,
     timeout_secs: u64,
 ) -> anyhow::Result<serde_json::Value> {
-    // Firecracker API (REST over Unix socket)
-    // 분석용 경량 VM 설정: 1vCPU, 256MB RAM
-    let config = serde_json::json!({
-        "boot-source": {
-            "kernel_image_path": "/usr/share/aegis/vm/vmlinux.bin",
-            "boot_args": "console=ttyS0 reboot=k panic=1 pci=off"
-        },
-        "drives": [{
-            "drive_id": "rootfs",
-            "path_on_host": "/usr/share/aegis/vm/rootfs.ext4",
-            "is_root_device": true,
-            "is_read_only": false
-        }, {
-            "drive_id": "sample",
-            "path_on_host": sample.to_string_lossy(),
-            "is_root_device": false,
-            "is_read_only": true
-        }],
-        "machine-config": {
-            "vcpu_count": 1,
-            "mem_size_mib": 256
-        },
-        "network-interfaces": []  // 네트워크 없음 (격리)
-    });
+    let mut session = FirecrackerSession::start().await?;
+    session.configure(sample).await?;
+    session.start_instance().await?;
 
-    tracing::info!("Firecracker VM config: {}", config);
+    let wait = timeout_secs.min(300);
+    tokio::time::sleep(tokio::time::Duration::from_secs(wait)).await;
 
-    // 실제 구현: firecracker API 소켓으로 설정 전송 + 부팅 + 분석 에이전트 통신
+    session.shutdown().await?;
+
     Ok(serde_json::json!({
-        "status": "vm_started",
+        "status": "completed",
         "backend": "firecracker",
-        "timeout_secs": timeout_secs,
-        "note": "Full VM analysis requires firecracker binary and VM image"
+        "timeout_secs": wait,
+        "sample": sample.display().to_string(),
+        "vm_dir": VM_DIR,
     }))
 }
 
@@ -64,37 +49,47 @@ async fn run_with_qemu(
     sample: &Path,
     timeout_secs: u64,
 ) -> anyhow::Result<serde_json::Value> {
+    let qcow = Path::new(VM_DIR).join("analysis.qcow2");
     let socket = format!("/tmp/aegis_qemu_{}.sock", std::process::id());
 
     let mut child = tokio::process::Command::new("qemu-system-x86_64")
         .args([
-            "-m", "256",
+            "-m",
+            "256",
             "-nographic",
             "-nodefaults",
             "-no-reboot",
-            "-drive", &format!("file=/usr/share/aegis/vm/analysis.qcow2,if=virtio,snapshot=on"),
-            "-drive", &format!("file={},if=virtio,readonly=on,format=raw", sample.display()),
-            "-virtfs", "local,path=/tmp,mount_tag=shared,security_model=none,readonly=off",
-            "-monitor", &format!("unix:{},server,nowait", socket),
-            "-serial", "stdio",
+            "-enable-kvm",
+            "-drive",
+            &format!("file={},if=virtio,snapshot=on", qcow.display()),
+            "-drive",
+            &format!(
+                "file={},if=virtio,readonly=on,format=raw",
+                sample.display()
+            ),
+            "-monitor",
+            &format!("unix:{socket},server,nowait"),
+            "-serial",
+            "stdio",
         ])
         .kill_on_drop(true)
         .spawn()?;
 
-    tokio::time::sleep(tokio::time::Duration::from_secs(timeout_secs.min(60))).await;
-
+    let wait = timeout_secs.min(300);
+    tokio::time::sleep(tokio::time::Duration::from_secs(wait)).await;
     let _ = child.kill().await;
 
     Ok(serde_json::json!({
         "status": "completed",
         "backend": "qemu",
-        "timeout_secs": timeout_secs,
+        "timeout_secs": wait,
+        "sample": sample.display().to_string(),
     }))
 }
 
-fn is_firecracker_available() -> bool {
-    std::path::Path::new("/usr/bin/firecracker").exists() ||
-    std::path::Path::new("/usr/local/bin/firecracker").exists()
+fn vm_artifacts_ready() -> bool {
+    let base = Path::new(VM_DIR);
+    base.join("vmlinux.bin").exists() && base.join("rootfs.ext4").exists()
 }
 
 fn is_qemu_available() -> bool {

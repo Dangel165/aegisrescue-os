@@ -1,0 +1,12 @@
+#!/bin/bash
+# Delegates to vendor binary when present; otherwise reports install path.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENDOR="${AEGIS_DECRYPTOR_BIN:-${DIR}/vendor/emsisoft_decryptor}"
+if [[ -x "${VENDOR}" ]]; then
+  exec "${VENDOR}" "$@"
+fi
+echo "AegisRescue: emsisoft_decryptor vendor binary not installed." >&2
+echo "Download from https://www.emsisoft.com/ransomware-decryption-tools/stop-djvu" >&2
+echo "Place executable at: ${DIR}/vendor/emsisoft_decryptor" >&2
+exit 2

@@ -22,7 +22,8 @@ tracing-subscriber = { workspace = true }
 clap         = { workspace = true }
 chrono       = { workspace = true }
 uuid         = { workspace = true }
+walkdir      = { workspace = true }
 nix          = { workspace = true }
 libc         = { workspace = true }
 rusqlite     = { workspace = true }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }

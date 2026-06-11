@@ -170,8 +170,18 @@ pub fn repair_gpt(device: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn check_known_mbr_hash(_hash: &str) -> bool {
-    // 알려진 정상 MBR 해시 목록 (실제 배포 시 파일에서 로드)
-    // 여기서는 false 반환 (알 수 없음)
-    false
+fn check_known_mbr_hash(hash: &str) -> bool {
+    let path = std::path::Path::new("/usr/share/aegis/mbr/known_hashes.txt");
+    if !path.exists() {
+        return false;
+    }
+    std::fs::read_to_string(path)
+        .map(|content| {
+            content
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .any(|line| line.eq_ignore_ascii_case(hash) || line.ends_with(hash))
+        })
+        .unwrap_or(false)
 }

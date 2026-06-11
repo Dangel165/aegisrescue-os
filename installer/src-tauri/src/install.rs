@@ -332,20 +332,30 @@ impl Installer {
             if self.config.security.enable_secure_boot {
                 grub_args.push("--uefi-secure-boot");
             }
-            let _ = tokio::process::Command::new("chroot")
+            let status = tokio::process::Command::new("chroot")
                 .args(std::iter::once(mount_root).chain(grub_args))
-                .status().await;
+                .status()
+                .await?;
+            if !status.success() {
+                anyhow::bail!("grub-install (UEFI) failed");
+            }
         } else {
-            // Legacy BIOS: GRUB MBR
-            let _ = tokio::process::Command::new("chroot")
+            let status = tokio::process::Command::new("chroot")
                 .args([mount_root, "grub-install", dev])
-                .status().await;
+                .status()
+                .await?;
+            if !status.success() {
+                anyhow::bail!("grub-install (BIOS) failed");
+            }
         }
 
-        // grub.cfg 생성
-        let _ = tokio::process::Command::new("chroot")
+        let status = tokio::process::Command::new("chroot")
             .args([mount_root, "update-grub"])
-            .status().await;
+            .status()
+            .await?;
+        if !status.success() {
+            anyhow::bail!("update-grub failed");
+        }
 
         Ok(())
     }

@@ -10,7 +10,7 @@
   import JobsPanel from './components/JobsPanel.svelte'
   import QuarantinePanel from './components/QuarantinePanel.svelte'
   import NetworkPanel from './components/NetworkPanel.svelte'
-  import LogsPanel from './components/LogsPanel.svelte'
+  import AnalysisPanel from './components/AnalysisPanel.svelte'
 
   let activePanel = 'dashboard'
   let systemStatus: any = null
@@ -26,6 +26,7 @@
     { id: 'quarantine',  icon: '🧪', label: '격리' },
     { id: 'jobs',        icon: '⚙️', label: '작업' },
     { id: 'network',     icon: '🌐', label: '네트워크' },
+    { id: 'analysis',   icon: '🧠', label: 'AI/샌드박스' },
     { id: 'logs',        icon: '📜', label: '로그' },
   ]
 
@@ -74,8 +75,8 @@
       {/each}
 
       <div class="sidebar-footer">
-        <button class="nav-item nav-advanced" on:click={() => {}}>
-          고급 모드
+        <button class="nav-item nav-advanced" on:click={() => activePanel = 'analysis'}>
+          고급 분석
         </button>
       </div>
     </nav>
@@ -100,6 +101,8 @@
         <QuarantinePanel />
       {:else if activePanel === 'network'}
         <NetworkPanel bind:mode={networkMode} />
+      {:else if activePanel === 'analysis'}
+        <AnalysisPanel />
       {:else if activePanel === 'logs'}
         <LogsPanel />
       {/if}

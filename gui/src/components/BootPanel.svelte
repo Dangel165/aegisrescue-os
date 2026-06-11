@@ -11,7 +11,12 @@
   async function startRepair() {
     running = true; log = ''; error = ''
     try {
-      const jobId = await invoke('start_boot_repair', { device })
+      const jobId = await invoke('start_boot_repair', {
+        device,
+        repairWindows,
+        repairLinux,
+        repairEfi,
+      })
       log = `✓ 작업 제출됨 (ID: ${jobId})\n복구 진행 중...`
     } catch (e: any) {
       error = e.toString()

@@ -1,10 +1,12 @@
-//! AegisRescue AI 악성코드 분류 라이브러리
-//!
-//! 완전 오프라인 추론 — 2GB RAM 환경에서 동작 가능한 경량 모델 우선
+//! 공개 AI 분류 API
 
 pub mod features;
+pub mod inference;
 pub mod model;
 pub mod result;
+
+#[cfg(feature = "onnx")]
+pub mod onnx_tract;
 
 pub use model::AiClassifier;
 pub use result::AiResult;

@@ -1,11 +1,48 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/tauri'
-  import { onMount } from 'svelte'
-  let events: any[] = []; let error = ''
+  import { listen } from '@tauri-apps/api/event'
+  import { onMount, onDestroy } from 'svelte'
+
+  let events: any[] = []
+  let error = ''
+  let unlisten: (() => void) | undefined
+
+  function prependEvent(ev: any) {
+    events = [ev, ...events].slice(0, 200)
+  }
 
   onMount(async () => {
-    try { events = await invoke('get_events', { limit: 100 }) } catch (e: any) { error = e.toString() }
+    try {
+      events = await invoke('get_events', { limit: 100 })
+    } catch (e: any) {
+      error = e.toString()
+    }
+
+    unlisten = await listen<any>('daemon-stream', (msg) => {
+      const p = msg.payload
+      if (p?.stream === 'event' && p.event) {
+        prependEvent(p.event)
+      } else if (p?.stream === 'threat_found' && p.threat) {
+        prependEvent({
+          timestamp: p.threat.detected_at,
+          severity: 'Critical',
+          event_type: 'ThreatDetected',
+          message: `Threat: ${p.threat.path}`,
+          context: p.threat,
+        })
+      } else if (p?.stream === 'job_progress') {
+        prependEvent({
+          timestamp: new Date().toISOString(),
+          severity: 'Info',
+          event_type: 'UserAction',
+          message: p.progress?.message ?? 'Job progress',
+          context: p,
+        })
+      }
+    })
   })
+
+  onDestroy(() => unlisten?.())
 
   function severityColor(s: string) {
     return s === 'Critical' || s === 'Error' ? '#f85149' : s === 'Warning' ? '#d29922' : '#3fb950'
@@ -24,7 +61,7 @@
         <span class="log-msg">{ev.message}</span>
       </div>
     {:else}
-      <div class="empty">이벤트 없음</div>
+      <div class="empty">이벤트 없음 — aegisd 실행 후 스캔하면 실시간 표시됩니다</div>
     {/each}
   </div>
 </div>
@@ -32,7 +69,7 @@
 <style>
   .panel { max-width: 900px; }
   .panel-title { font-size: 20px; font-weight: 700; margin-bottom: 24px; }
-  .log-list { font-family: monospace; font-size: 12px; }
+  .log-list { font-family: monospace; font-size: 12px; max-height: 70vh; overflow-y: auto; }
   .log-entry { display: grid; grid-template-columns: 160px 80px 150px 1fr; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #21262d; }
   .log-ts { color: #8b949e; }
   .log-sev { font-weight: 600; }

@@ -7,6 +7,7 @@
 
 mod namespace;
 mod seccomp;
+mod fc_api;
 mod vm;
 
 use clap::{Parser, Subcommand};
@@ -35,7 +36,10 @@ enum Commands {
         /// 분석 타임아웃 (초)
         #[arg(long, default_value = "60")]
         timeout: u64,
-        /// 분석 결과 출력 경로
+        /// JSON만 stdout에 출력 (로그 제외)
+        #[arg(long)]
+        json: bool,
+        /// 결과 JSON 저장 경로
         #[arg(long)]
         output: Option<PathBuf>,
     },
@@ -51,22 +55,30 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     match cli.cmd {
-        Commands::Run { sample, level, timeout, output } => {
-            println!("AegisRescue Sandbox — Level {} isolation", level);
-            println!("Sample: {}", sample.display());
-            println!("Timeout: {}s", timeout);
+        Commands::Run {
+            sample,
+            level,
+            timeout,
+            output,
+            json,
+        } => {
+            if !json {
+                println!("AegisRescue Sandbox — Level {} isolation", level);
+                println!("Sample: {}", sample.display());
+                println!("Timeout: {}s", timeout);
+            }
 
             let result = match level {
                 0 => {
-                    println!("Mode: Static analysis only");
+                    if !json { println!("Mode: Static analysis only"); }
                     analyze_static(&sample).await
                 }
                 1 => {
-                    println!("Mode: Namespace isolation (L1)");
+                    if !json { println!("Mode: Namespace isolation (L1)"); }
                     namespace::run_in_namespace(&sample, timeout).await
                 }
                 2 => {
-                    println!("Mode: microVM isolation (L2)");
+                    if !json { println!("Mode: microVM isolation (L2)"); }
                     vm::run_in_vm(&sample, timeout).await
                 }
                 _ => Err(anyhow::anyhow!("Invalid isolation level: {}", level)),
@@ -74,7 +86,9 @@ async fn main() -> anyhow::Result<()> {
 
             if let Some(out) = output {
                 std::fs::write(&out, serde_json::to_string_pretty(&result)?)?;
-                println!("Results written to {}", out.display());
+                if !json {
+                    println!("Results written to {}", out.display());
+                }
             } else {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             }

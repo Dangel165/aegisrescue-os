@@ -65,6 +65,27 @@ resolve_wsl_paths() {
 
 resolve_wsl_paths
 
+bootstrap_from_windows() {
+    [[ -d "${WIN_SRC}" && -f "${WIN_SRC}/Cargo.toml" ]] || return 0
+    mkdir -p "${WSL_HOME}/build"
+    rsync -a "${WIN_SRC}/core/" "${WSL_HOME}/core/" 2>/dev/null || true
+    rsync -a "${WIN_SRC}/tools/" "${WSL_HOME}/tools/" 2>/dev/null || true
+    rsync -a "${WIN_SRC}/data/" "${WSL_HOME}/data/" 2>/dev/null || true
+    for f in Cargo.toml Cargo.lock rust-toolchain.toml; do
+        [[ -f "${WIN_SRC}/${f}" ]] && cp -f "${WIN_SRC}/${f}" "${WSL_HOME}/${f}" 2>/dev/null || true
+    done
+    [[ -f "${WIN_SRC}/build/wsl-build.sh" ]] && \
+        cp -f "${WIN_SRC}/build/wsl-build.sh" "${WSL_HOME}/build/wsl-build.sh"
+    chmod +x "${WSL_HOME}/build/wsl-build.sh" 2>/dev/null || true
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        chown -R "${SUDO_USER}:${SUDO_USER}" \
+            "${WSL_HOME}/core" "${WSL_HOME}/tools" "${WSL_HOME}/data" \
+            "${WSL_HOME}/Cargo.toml" "${WSL_HOME}/Cargo.lock" \
+            2>/dev/null || true
+    fi
+}
+bootstrap_from_windows
+
 # ─── 색상 ──────────────────────────────────────────────────────
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'
 C='\033[0;36m'; B='\033[1m'; N='\033[0m'
@@ -190,7 +211,7 @@ EOF
         git build-essential pkg-config libssl-dev \
         musl-tools musl-dev \
         libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
-        qemu-system-x86 ovmf \
+        qemu-system-x86 qemu-utils ovmf \
         locales sudo gpg apt-transport-https
 
     ok "패키지 설치 완료"
@@ -280,6 +301,36 @@ copy_source() {
              2>/dev/null || true
 }
 
+# Windows(/mnt/f/...) 편집본 → WSL 홈 경량 동기화 (chroot/out/target 제외)
+sync_win_source_light() {
+    [[ -d "${WIN_SRC}" && -f "${WIN_SRC}/Cargo.toml" ]] || return 0
+
+    log "Windows 소스 동기화: $(win_display_path) → ${WSL_HOME}"
+    for dir in core tools data gui installer packaging security assets; do
+        [[ -d "${WIN_SRC}/${dir}" ]] || continue
+        rsync -a "${WIN_SRC}/${dir}/" "${WSL_HOME}/${dir}/"
+    done
+    rsync -a \
+        "${WIN_SRC}/Cargo.toml" \
+        "${WIN_SRC}/Cargo.lock" \
+        "${WIN_SRC}/rust-toolchain.toml" \
+        "${WSL_HOME}/" 2>/dev/null || true
+    rsync -a "${WIN_SRC}/build/" "${WSL_HOME}/build/" \
+        --exclude='chroot/' \
+        --exclude='iso-stage/' \
+        --exclude='out/' \
+        --exclude='tools/' 2>/dev/null || true
+
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        chown -R "${SUDO_USER}:${SUDO_USER}" \
+            "${WSL_HOME}/core" "${WSL_HOME}/tools" "${WSL_HOME}/data" \
+            "${WSL_HOME}/gui" "${WSL_HOME}/installer" "${WSL_HOME}/packaging" \
+            "${WSL_HOME}/security" "${WSL_HOME}/assets" \
+            "${WSL_HOME}/Cargo.toml" "${WSL_HOME}/Cargo.lock" \
+            2>/dev/null || true
+    fi
+}
+
 # ─── STEP 2: WSL 마운트 헬퍼 (--bind 대체) ──────────────────────
 wsl_mount_chroot() {
     local chroot="$1"
@@ -367,6 +418,7 @@ EOF
         clamav yara testdisk gddrescue dc3dd \
         grub2-common grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed shim-signed \
         nftables iptables bubblewrap strace \
+        qemu-system-x86 \
         live-boot live-config live-config-systemd casper \
         plymouth plymouth-themes \
         2>&1 | tee "${OUT_DIR}/chroot-packages.log" | tail -20 || \
@@ -412,6 +464,31 @@ EOF
 build_rust_wsl() {
     step "Rust 도구 빌드"
     [[ $SKIP_RUST -eq 1 ]] && { ok "건너뜀"; return 0; }
+
+    bootstrap_from_windows
+    if grep -q 'if let Ok(db) = self.0.db.lock()' \
+        "${WSL_HOME}/core/aegisd/src/state.rs" 2>/dev/null; then
+        err "aegisd 소스 동기화 실패 — Windows 경로 확인 후:\n  bash $(win_display_path)/build/wsl-build.sh --copy"
+    fi
+
+    # AI 모델 + VM/decryptor 배포 아티팩트 생성
+    if [[ -x "${WSL_HOME}/tools/gen-aegis-model.py" ]] || [[ -f "${WSL_HOME}/tools/gen-aegis-model.py" ]]; then
+        log "AI 모델 생성 (aegismodel/onnx)..."
+        pip3 install --break-system-packages onnx 2>/dev/null || \
+            pip3 install onnx 2>/dev/null || true
+        python3 "${WSL_HOME}/tools/gen-aegis-model.py" 2>&1 | tail -5 || \
+            warn "gen-aegis-model.py 실패 — data/models 확인"
+    fi
+    if [[ -f "${WSL_HOME}/tools/build-vm-artifacts.sh" ]]; then
+        log "L2 VM 아티팩트 준비..."
+        command -v qemu-img >/dev/null 2>&1 || \
+            apt-get install -y --no-install-recommends qemu-utils 2>/dev/null || true
+        rm -rf "${WSL_HOME}/data/vm/.rootfs-staging" \
+               "${WSL_HOME}/data/vm/.rootfs-mnt" \
+               "${WSL_HOME}/data/vm/debootstrap-root" 2>/dev/null || true
+        bash "${WSL_HOME}/tools/build-vm-artifacts.sh" 2>&1 | tail -10 || \
+            warn "build-vm-artifacts.sh 실패 — data/vm 확인"
+    fi
 
     # PATH에 cargo 추가
     source "${HOME}/.cargo/env" 2>/dev/null || \
@@ -955,6 +1032,12 @@ EOF
        "${CHROOT_DIR}/usr/share/aegis/policy.toml" 2>/dev/null || true
     cp "${WSL_HOME}/security/nftables/airgap.nft" \
        "${CHROOT_DIR}/etc/nftables.conf" 2>/dev/null || true
+    mkdir -p "${CHROOT_DIR}/usr/share/aegis/nftables" "${CHROOT_DIR}/usr/share/aegis/seccomp" \
+             "${CHROOT_DIR}/usr/share/aegis/mbr"
+    cp "${WSL_HOME}/security/nftables/"*.nft \
+       "${CHROOT_DIR}/usr/share/aegis/nftables/" 2>/dev/null || true
+    cp "${WSL_HOME}/security/seccomp/"*.json \
+       "${CHROOT_DIR}/usr/share/aegis/seccomp/" 2>/dev/null || true
     mkdir -p "${CHROOT_DIR}/etc/apparmor.d"
     cp "${WSL_HOME}/security/apparmor/"*.apparmor \
        "${CHROOT_DIR}/etc/apparmor.d/" 2>/dev/null || true
@@ -965,6 +1048,28 @@ EOF
           "${CHROOT_DIR}/var/lib/aegis/yara-rules/" 2>/dev/null || true
     cp -r "${WSL_HOME}/data/signatures/"* \
           "${CHROOT_DIR}/var/lib/aegis/signatures/" 2>/dev/null || true
+    if [[ -d "${WSL_HOME}/data/models" ]]; then
+        cp -r "${WSL_HOME}/data/models/"* \
+              "${CHROOT_DIR}/var/lib/aegis/models/" 2>/dev/null || true
+        mkdir -p "${CHROOT_DIR}/usr/share/aegis/models"
+        cp -r "${WSL_HOME}/data/models/"* \
+              "${CHROOT_DIR}/usr/share/aegis/models/" 2>/dev/null || true
+    fi
+    if [[ -d "${WSL_HOME}/data/vm" ]]; then
+        mkdir -p "${CHROOT_DIR}/usr/share/aegis/vm"
+        cp -r "${WSL_HOME}/data/vm/"* \
+              "${CHROOT_DIR}/usr/share/aegis/vm/" 2>/dev/null || true
+    fi
+    if [[ -d "${WSL_HOME}/data/decryptors" ]]; then
+        mkdir -p "${CHROOT_DIR}/usr/share/aegis/decryptors/vendor"
+        cp -r "${WSL_HOME}/data/decryptors/"* \
+              "${CHROOT_DIR}/usr/share/aegis/decryptors/" 2>/dev/null || true
+        chmod +x "${CHROOT_DIR}/usr/share/aegis/decryptors/"* 2>/dev/null || true
+    fi
+    mkdir -p "${CHROOT_DIR}/usr/share/aegis/keys"
+    [[ -f "${WSL_HOME}/data/keys/stop_djvu_offline.key" ]] && \
+        cp "${WSL_HOME}/data/keys/stop_djvu_offline.key" \
+           "${CHROOT_DIR}/usr/share/aegis/keys/" 2>/dev/null || true
 
     # 부팅 스플래시(Plymouth) + 데스크톱 로고
     # shellcheck source=stage-boot-logos.sh
@@ -1292,6 +1397,9 @@ main() {
         copy_source
     fi
     cd "${WSL_HOME}"
+
+    # Cursor/Windows에서 편집한 소스를 WSL 빌드 트리에 반영
+    sync_win_source_light
 
     [[ $ISO_ONLY -eq 0 ]] && build_base_wsl
     [[ $ISO_ONLY -eq 0 ]] && build_rust_wsl

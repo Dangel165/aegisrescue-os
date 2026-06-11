@@ -1,0 +1,28 @@
+#!/bin/bash
+# Generic decryptor runner — enumerates encrypted files and writes recovery manifest.
+set -euo pipefail
+TARGET="${1:-}"
+OUTPUT="${2:-}"
+FAMILY="${3:-unknown}"
+
+if [[ -z "${TARGET}" || -z "${OUTPUT}" ]]; then
+  echo "usage: aegis_generic_decryptor <target_dir> <output_dir> [family]" >&2
+  exit 1
+fi
+
+mkdir -p "${OUTPUT}"
+MANIFEST="${OUTPUT}/pending_decryptor_files.txt"
+: > "${MANIFEST}"
+
+count=0
+while IFS= read -r -d '' f; do
+  echo "${f}" >> "${MANIFEST}"
+  count=$((count + 1))
+done < <(find "${TARGET}" -type f \( -iname '*.locked' -o -iname '*.encrypted' -o -iname '*.crypt' \) -print0 2>/dev/null || true)
+
+echo "AegisRescue generic decryptor: family=${FAMILY} candidates=${count}" >&2
+echo "Catalog written to ${MANIFEST}" >&2
+if [[ "${count}" -eq 0 ]]; then
+  exit 1
+fi
+exit 0

@@ -221,28 +221,16 @@ fn check_disk_space() -> CheckResult {
                 };
             }
         }
-    }
-    {
-        let mut stat = libc::statvfs {
-            f_bavail: 8,
-            f_frsize: 1024 * 1024 * 1024,
+        return CheckResult {
+            category: "hardware".into(),
+            name: "디스크 여유 공간".into(),
+            status: Status::Skip,
+            detail: "디스크 정보를 읽을 수 없음".into(),
+            required: false,
+            fix_hint: None,
         };
-        if unsafe { libc::statvfs(std::ptr::null(), &mut stat) } == 0 {
-            let free_gb = (stat.f_bavail as f64 * stat.f_frsize as f64) / (1024.0_f64.powi(3));
-            return CheckResult {
-                category: "hardware".into(),
-                name: "디스크 여유 공간".into(),
-                status: if free_gb >= 4.0 { Status::Pass }
-                        else if free_gb >= 2.0 { Status::Warn }
-                        else { Status::Fail },
-                detail: format!("{:.1} GiB 여유 공간 (stub)", free_gb),
-                required: true,
-                fix_hint: if free_gb < 4.0 {
-                    Some("최소 4 GiB 여유 공간이 필요합니다".into())
-                } else { None },
-            };
-        }
     }
+    #[cfg(not(unix))]
     CheckResult {
         category: "hardware".into(),
         name: "디스크 여유 공간".into(),

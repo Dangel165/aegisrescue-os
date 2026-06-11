@@ -3,6 +3,8 @@
 use std::path::Path;
 use uuid::Uuid;
 
+const PACKAGED_SECCOMP: &str = "/usr/share/aegis/seccomp/aegis-sandbox.json";
+
 pub async fn run_in_namespace(
     sample: &Path,
     timeout_secs: u64,
@@ -12,24 +14,23 @@ pub async fn run_in_namespace(
 
     tracing::info!(session = %session_id, "starting namespace sandbox");
 
-    // 1. 격리 루트 파일시스템 구성 (tmpfs)
     setup_sandbox_rootfs(&sandbox_root)?;
 
-    // 2. 샘플 읽기 전용 주입
     let sample_dest = format!("{}/sample", sandbox_root);
     std::fs::copy(sample, &sample_dest)?;
 
-    let seccomp_path = format!("{}/seccomp.json", sandbox_root);
-    std::fs::write(&seccomp_path, serde_json::to_string_pretty(&crate::seccomp::seccomp_profile())?)?;
+    let seccomp_json = format!("{}/seccomp.json", sandbox_root);
+    write_seccomp_profile(&seccomp_json)?;
 
-    // 3. unshare로 네임스페이스 생성 후 bubblewrap으로 실행
+    let seccomp_bpf = format!("{}/seccomp.bpf", sandbox_root);
+    let seccomp_enforced = compile_seccomp_bpf(&seccomp_json, &seccomp_bpf);
+
     let output = tokio::time::timeout(
         tokio::time::Duration::from_secs(timeout_secs),
-        run_with_bwrap(&sandbox_root, &sample_dest),
+        run_with_bwrap(&sandbox_root, &sample_dest, &seccomp_bpf, seccomp_enforced),
     )
     .await;
 
-    // 4. 정리
     cleanup_sandbox(&sandbox_root);
 
     match output {
@@ -45,6 +46,31 @@ pub async fn run_in_namespace(
     }
 }
 
+fn write_seccomp_profile(dest: &str) -> anyhow::Result<()> {
+    if std::path::Path::new(PACKAGED_SECCOMP).exists() {
+        std::fs::copy(PACKAGED_SECCOMP, dest)?;
+    } else {
+        std::fs::write(dest, serde_json::to_string_pretty(&crate::seccomp::seccomp_profile())?)?;
+    }
+    Ok(())
+}
+
+fn compile_seccomp_bpf(json_path: &str, bpf_path: &str) -> bool {
+    for tool in ["scmp_compile", "pfc"] {
+        let ok = std::process::Command::new(tool)
+            .args(["-o", bpf_path, json_path])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok && std::path::Path::new(bpf_path).exists() {
+            tracing::info!(tool, bpf = bpf_path, "seccomp BPF compiled");
+            return true;
+        }
+    }
+    tracing::warn!("seccomp BPF compile skipped — install libseccomp-utils (scmp_compile)");
+    false
+}
+
 fn setup_sandbox_rootfs(root: &str) -> anyhow::Result<()> {
     std::fs::create_dir_all(root)?;
     std::fs::create_dir_all(format!("{}/tmp", root))?;
@@ -52,39 +78,107 @@ fn setup_sandbox_rootfs(root: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_with_bwrap(sandbox_root: &str, sample: &str) -> anyhow::Result<serde_json::Value> {
+async fn run_with_bwrap(
+    sandbox_root: &str,
+    sample: &str,
+    seccomp_bpf: &str,
+    seccomp_enforced: bool,
+) -> anyhow::Result<serde_json::Value> {
     let strace_log = format!("{}/strace.log", sandbox_root);
-    let seccomp_path = format!("{}/seccomp.json", sandbox_root);
 
-    // bubblewrap (bwrap) — 네임스페이스 + seccomp 격리
+    if seccomp_enforced {
+        let script = format!(
+            r#"#!/bin/sh
+set -e
+exec 3<"{seccomp_bpf}"
+exec bwrap \
+  --ro-bind /usr /usr \
+  --ro-bind /lib /lib \
+  --ro-bind /lib64 /lib64 \
+  --ro-bind {sandbox_root} {sandbox_root} \
+  --proc /proc \
+  --dev /dev \
+  --tmpfs /tmp \
+  --unshare-all \
+  --new-session \
+  --die-with-parent \
+  --seccomp 3 \
+  -- strace -f -o {strace_log} {sample}
+"#
+        );
+        let script_path = format!("{}/run.sh", sandbox_root);
+        std::fs::write(&script_path, script)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))?;
+        }
+        let output = tokio::process::Command::new(&script_path).output().await?;
+        return build_result(sandbox_root, sample, &strace_log, seccomp_bpf, true, &output);
+    }
+
     let output = tokio::process::Command::new("bwrap")
         .args([
-            "--ro-bind", "/usr", "/usr",
-            "--ro-bind", "/lib", "/lib",
-            "--ro-bind", "/lib64", "/lib64",
-            "--ro-bind", sandbox_root, sandbox_root,
-            "--proc", "/proc",
-            "--dev", "/dev",
-            "--tmpfs", "/tmp",
+            "--ro-bind",
+            "/usr",
+            "/usr",
+            "--ro-bind",
+            "/lib",
+            "/lib",
+            "--ro-bind",
+            "/lib64",
+            "/lib64",
+            "--ro-bind",
+            sandbox_root,
+            sandbox_root,
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
             "--unshare-all",
             "--new-session",
             "--die-with-parent",
-            "--", "strace", "-f", "-o", strace_log.as_str(), sample,
+            "--",
+            "strace",
+            "-f",
+            "-o",
+            strace_log.as_str(),
+            sample,
         ])
         .output()
         .await?;
 
-    let strace_log_content = std::fs::read_to_string(&strace_log).unwrap_or_default();
-    let seccomp_profile = std::fs::read_to_string(&seccomp_path).unwrap_or_default();
+    build_result(
+        sandbox_root,
+        sample,
+        &strace_log,
+        seccomp_bpf,
+        false,
+        &output,
+    )
+}
 
+fn build_result(
+    sandbox_root: &str,
+    sample: &str,
+    strace_log: &str,
+    seccomp_bpf: &str,
+    seccomp_enforced: bool,
+    output: &std::process::Output,
+) -> anyhow::Result<serde_json::Value> {
+    let strace_log_content = std::fs::read_to_string(strace_log).unwrap_or_default();
     Ok(serde_json::json!({
         "status": "completed",
         "sandbox_root": sandbox_root,
+        "sample": sample,
         "exit_code": output.status.code(),
         "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
         "stderr": String::from_utf8_lossy(&output.stderr).to_string(),
+        "seccomp_enforced": seccomp_enforced,
         "seccomp_rules": crate::seccomp::ALLOWED_SYSCALLS.len(),
-        "seccomp_profile_bytes": seccomp_profile.len(),
+        "seccomp_bpf_bytes": std::fs::metadata(seccomp_bpf).map(|m| m.len()).unwrap_or(0),
         "syscalls_traced": strace_log_content.lines().count(),
         "suspicious_syscalls": analyze_strace(&strace_log_content),
     }))
@@ -92,17 +186,21 @@ async fn run_with_bwrap(sandbox_root: &str, sample: &str) -> anyhow::Result<serd
 
 fn cleanup_sandbox(root: &str) {
     let _ = std::fs::remove_dir_all(root);
-    let _ = std::fs::remove_file("/tmp/strace.log");
 }
 
 fn analyze_strace(log: &str) -> Vec<String> {
     let suspicious = [
-        "execve", "ptrace", "process_vm_write", "memfd_create",
-        "socket", "connect", "sendto",
-        "openat.*\\/tmp", "openat.*\\/dev\\/shm",
+        "execve",
+        "ptrace",
+        "process_vm_write",
+        "memfd_create",
+        "socket",
+        "connect",
+        "sendto",
     ];
 
-    suspicious.iter()
+    suspicious
+        .iter()
         .filter(|s| log.contains(*s))
         .map(|s| s.to_string())
         .collect()

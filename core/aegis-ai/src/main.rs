@@ -1,11 +1,7 @@
 //! aegis-ai CLI
 
-mod features;
-mod model;
-mod result;
-
-use features::FeatureVector;
-use model::AiClassifier;
+use aegis_ai::features::FeatureVector;
+use aegis_ai::AiClassifier;
 use clap::Parser;
 use std::path::PathBuf;
 

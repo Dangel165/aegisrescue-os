@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENDOR="${AEGIS_DECRYPTOR_BIN:-${DIR}/vendor/bitdefender_gandcrab_decryptor}"
+if [[ -x "${VENDOR}" ]]; then
+  exec "${VENDOR}" "$@"
+fi
+echo "AegisRescue: GandCrab decryptor vendor binary not installed." >&2
+echo "Download from NoMoreRansom / Bitdefender and place at:" >&2
+echo "  ${DIR}/vendor/bitdefender_gandcrab_decryptor" >&2
+exit 2

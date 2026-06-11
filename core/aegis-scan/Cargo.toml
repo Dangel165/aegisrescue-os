@@ -26,3 +26,4 @@ rayon        = { workspace = true }
 regex        = { workspace = true }
 indicatif    = { workspace = true }
 goblin       = { workspace = true }
+aegis-ai     = { path = "../aegis-ai" }

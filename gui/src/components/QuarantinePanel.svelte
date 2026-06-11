@@ -1,16 +1,39 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/tauri'
-  import { onMount } from 'svelte'
-  let entries: any[] = []; let error = ''
+  import { listen } from '@tauri-apps/api/event'
+  import { onMount, onDestroy } from 'svelte'
+  let entries: any[] = []
+  let error = ''
+  let unlisten: (() => void) | undefined
+
+  async function reload() {
+    try {
+      entries = await invoke('list_quarantine')
+      error = ''
+    } catch (e: any) {
+      error = e.toString()
+    }
+  }
 
   onMount(async () => {
-    try { entries = await invoke('list_quarantine') } catch (e: any) { error = e.toString() }
+    await reload()
+    unlisten = await listen<any>('daemon-stream', async (msg) => {
+      const p = msg.payload
+      if (p?.stream === 'event') {
+        const t = p.event?.event_type
+        if (t === 'QuarantineAdded' || t === 'QuarantineRestored') {
+          await reload()
+        }
+      }
+    })
   })
+
+  onDestroy(() => unlisten?.())
 
   async function restore(id: string) {
     const path = prompt('복원 경로 입력:')
     if (!path) return
-    try { await invoke('restore_quarantine', { entryId: id, restorePath: path }) }
+    try { await invoke('restore_quarantine', { entryId: id, restorePath: path }); await reload() }
     catch (e: any) { alert(e.toString()) }
   }
 

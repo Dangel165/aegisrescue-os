@@ -1,30 +1,89 @@
 //! Tauri 커맨드 — aegisd IPC 브리지
 
-use aegis_common::ipc::{DaemonRequest, DaemonResponse, AEGIS_SOCKET_PATH};
+use aegis_common::ipc::{DaemonRequest, DaemonResponse, DaemonStream, AEGIS_SOCKET_PATH};
 use aegis_common::types::JobType;
 use serde_json::Value;
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 async fn ipc_call(req: DaemonRequest) -> Result<DaemonResponse, String> {
-    let stream = UnixStream::connect(AEGIS_SOCKET_PATH).await
+    let stream = UnixStream::connect(AEGIS_SOCKET_PATH)
+        .await
         .map_err(|_| "aegisd not running. Start daemon first.".to_string())?;
 
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
 
-    let mut msg = serde_json::to_string(&req)
-        .map_err(|e| e.to_string())?;
+    let mut msg = serde_json::to_string(&req).map_err(|e| e.to_string())?;
     msg.push('\n');
-    writer.write_all(msg.as_bytes()).await
+    writer
+        .write_all(msg.as_bytes())
+        .await
         .map_err(|e| e.to_string())?;
 
     let mut line = String::new();
-    reader.read_line(&mut line).await
+    reader
+        .read_line(&mut line)
+        .await
         .map_err(|e| e.to_string())?;
 
     serde_json::from_str(line.trim()).map_err(|e| e.to_string())
+}
+
+async fn connect_event_stream() -> Result<BufReader<tokio::net::unix::OwnedReadHalf>, String> {
+    let stream = UnixStream::connect(AEGIS_SOCKET_PATH)
+        .await
+        .map_err(|_| "aegisd not running".to_string())?;
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+
+    let mut msg = serde_json::to_string(&DaemonRequest::SubscribeEvents).map_err(|e| e.to_string())?;
+    msg.push('\n');
+    writer
+        .write_all(msg.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    match serde_json::from_str::<DaemonResponse>(line.trim()) {
+        Ok(DaemonResponse::Subscribed) => Ok(reader),
+        Ok(DaemonResponse::Error { message, .. }) => Err(message),
+        _ => Err("Unexpected subscribe response".into()),
+    }
+}
+
+pub fn spawn_daemon_event_listener(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if let Ok(mut reader) = connect_event_stream().await {
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break,
+                        Err(_) => break,
+                        Ok(_) => {
+                            if let Ok(stream_evt) =
+                                serde_json::from_str::<DaemonStream>(line.trim())
+                            {
+                                if let Ok(payload) = serde_json::to_value(&stream_evt) {
+                                    let _ = app.emit_all("daemon-stream", payload);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+    });
 }
 
 #[tauri::command]
@@ -46,11 +105,17 @@ pub async fn list_disks() -> Result<Value, String> {
 }
 
 #[tauri::command]
-pub async fn start_scan(target: String, quick: bool) -> Result<String, String> {
-    let job_type = if quick {
-        JobType::QuickScan { target: PathBuf::from(target) }
-    } else {
-        JobType::FullScan { target: PathBuf::from(target) }
+pub async fn start_scan(target: String, mode: String) -> Result<String, String> {
+    let job_type = match mode.as_str() {
+        "quick" => JobType::QuickScan {
+            target: PathBuf::from(&target),
+        },
+        "full" => JobType::FullScan {
+            target: PathBuf::from(&target),
+        },
+        _ => JobType::StandardScan {
+            target: PathBuf::from(&target),
+        },
     };
 
     match ipc_call(DaemonRequest::SubmitJob { job_type }).await? {
@@ -74,8 +139,18 @@ pub async fn start_recovery(target: String, output: String) -> Result<String, St
 }
 
 #[tauri::command]
-pub async fn start_boot_repair(device: String) -> Result<String, String> {
-    let job_type = JobType::BootRepair { device: PathBuf::from(device) };
+pub async fn start_boot_repair(
+    device: String,
+    repair_windows: bool,
+    repair_linux: bool,
+    repair_efi: bool,
+) -> Result<String, String> {
+    let job_type = JobType::BootRepair {
+        device: PathBuf::from(device),
+        windows: repair_windows,
+        linux: repair_linux,
+        efi: repair_efi,
+    };
     match ipc_call(DaemonRequest::SubmitJob { job_type }).await? {
         DaemonResponse::JobSubmitted { job_id } => Ok(job_id.to_string()),
         DaemonResponse::Error { message, .. } => Err(message),
@@ -97,7 +172,19 @@ pub async fn start_forensic_capture(source: String, output: String) -> Result<St
 }
 
 #[tauri::command]
-pub async fn start_image(source: String, dest: String) -> Result<String, String> {
+pub async fn start_image(source: String, dest: String, damaged: bool) -> Result<String, String> {
+    if damaged {
+        let output = tokio::process::Command::new("aegis-image")
+            .args(["create", source.as_str(), dest.as_str(), "--damaged"])
+            .output()
+            .await
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        }
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
     let job_type = JobType::DiskImage {
         source: PathBuf::from(source),
         dest: PathBuf::from(dest),
@@ -162,7 +249,9 @@ pub async fn restore_quarantine(entry_id: String, restore_path: String) -> Resul
     match ipc_call(DaemonRequest::RestoreQuarantine {
         entry_id: id,
         restore_path: PathBuf::from(restore_path),
-    }).await? {
+    })
+    .await?
+    {
         DaemonResponse::Ok => Ok(()),
         DaemonResponse::Error { message, .. } => Err(message),
         _ => Err("Unexpected response".into()),
@@ -181,10 +270,66 @@ pub async fn delete_quarantine(entry_id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_events(limit: Option<u32>) -> Result<Value, String> {
-    match ipc_call(DaemonRequest::GetEvents { since: None, limit }).await? {
+    match ipc_call(DaemonRequest::GetEvents {
+        since: None,
+        limit,
+    })
+    .await?
+    {
         DaemonResponse::Events(e) => serde_json::to_value(e).map_err(|e| e.to_string()),
         DaemonResponse::Error { message, .. } => Err(message),
         _ => Err("Unexpected response".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn run_forensic(mode: String, source: String, output: String) -> Result<Value, String> {
+    let output_proc = match mode.as_str() {
+        "capture" => {
+            tokio::process::Command::new("aegis-forensic")
+                .args(["capture", source.as_str(), "--output", output.as_str()])
+                .output()
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        "timeline" => {
+            tokio::process::Command::new("aegis-forensic")
+                .args(["timeline", source.as_str(), "--output", output.as_str()])
+                .output()
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        "artifacts" => {
+            tokio::process::Command::new("aegis-forensic")
+                .args(["artifacts", source.as_str(), "--output", output.as_str()])
+                .output()
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        "verify" => {
+            tokio::process::Command::new("aegis-forensic")
+                .args(["verify", source.as_str()])
+                .output()
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        "custody" => {
+            tokio::process::Command::new("aegis-forensic")
+                .args(["custody", "--evidence-dir", source.as_str()])
+                .output()
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        _ => return Err(format!("Unknown forensic mode: {}", mode)),
+    };
+
+    if output_proc.status.success() {
+        Ok(serde_json::json!({
+            "stdout": String::from_utf8_lossy(&output_proc.stdout).to_string(),
+            "stderr": String::from_utf8_lossy(&output_proc.stderr).to_string(),
+        }))
+    } else {
+        Err(String::from_utf8_lossy(&output_proc.stderr).to_string())
     }
 }
 
@@ -208,9 +353,10 @@ pub async fn run_sandbox(sample: String, level: u8) -> Result<Value, String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    serde_json::from_slice(&output.stdout)
-        .or_else(|_| Ok::<Value, String>(serde_json::json!({
+    serde_json::from_slice(&output.stdout).or_else(|_| {
+        Ok::<Value, String>(serde_json::json!({
             "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
             "stderr": String::from_utf8_lossy(&output.stderr).to_string(),
-        })))
+        }))
+    })
 }

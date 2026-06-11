@@ -193,9 +193,18 @@ pub struct AegisJob {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum JobType {
     QuickScan { target: PathBuf },
+    StandardScan { target: PathBuf },
     FullScan { target: PathBuf },
     RansomwareRecovery { target: PathBuf, output: PathBuf },
-    BootRepair { device: PathBuf },
+    BootRepair {
+        device: PathBuf,
+        #[serde(default)]
+        windows: bool,
+        #[serde(default)]
+        linux: bool,
+        #[serde(default)]
+        efi: bool,
+    },
     DiskImage { source: PathBuf, dest: PathBuf },
     ForensicCapture { target: PathBuf, output: PathBuf },
     Backup { source: PathBuf, dest: PathBuf },

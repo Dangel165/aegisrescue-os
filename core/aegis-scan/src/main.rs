@@ -1,5 +1,6 @@
 //! aegis-scan — 멀티엔진 악성코드 스캐너
 
+mod ai_engine;
 mod engines;
 mod orchestrator;
 mod persistence;

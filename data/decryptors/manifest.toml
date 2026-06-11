@@ -1,0 +1,35 @@
+# AegisRescue decryptor manifest
+# Place vendor binaries under vendor/ or set AEGIS_DECRYPTOR_BIN per tool.
+
+[tools.emsisoft_decryptor]
+description = "Emsisoft STOP/Djvu decryptor wrapper"
+families = ["STOP/Djvu"]
+args = ["{target}", "--output", "{output}"]
+
+[tools.bitdefender_gandcrab_decryptor]
+description = "Bitdefender GandCrab decryptor wrapper"
+families = ["GandCrab"]
+args = ["{target}", "{output}"]
+
+[tools.aegis_generic_decryptor]
+description = "Generic decryptor runner (manifest-driven file enumeration)"
+families = ["*"]
+args = ["{target}", "{output}", "{family}"]
+
+[families."STOP/Djvu"]
+tool = "emsisoft_decryptor"
+
+[families.GandCrab]
+tool = "bitdefender_gandcrab_decryptor"
+
+[families."REvil/Sodinokibi"]
+tool = "aegis_generic_decryptor"
+extension = ""
+
+[families.Conti]
+tool = "aegis_generic_decryptor"
+extension = "CONTI"
+
+[families."Dharma/CrySiS"]
+tool = "aegis_generic_decryptor"
+extension = ""

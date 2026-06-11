@@ -1,32 +1,70 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/tauri'
+  import { listen } from '@tauri-apps/api/event'
+  import { onMount, onDestroy } from 'svelte'
 
   let target = '/mnt/targets'
   let scanMode = 'standard'
   let scanning = false
   let progress = 0
-  let results: any = null
+  let statusMsg = ''
+  let threats: any[] = []
   let error = ''
   let jobId = ''
+  let unlisten: (() => void) | undefined
+
+  onMount(async () => {
+    unlisten = await listen<any>('daemon-stream', (ev) => {
+      const payload = ev.payload
+      if (!payload || !jobId) return
+
+      if (payload.stream === 'job_progress' && payload.job_id === jobId) {
+        const p = payload.progress
+        if (p?.total) {
+          progress = Math.min(100, (p.current / p.total) * 100)
+        }
+        statusMsg = p?.message ?? statusMsg
+      }
+
+      if (payload.stream === 'threat_found') {
+        threats = [...threats, payload.threat]
+      }
+
+      if (payload.stream === 'event') {
+        const et = payload.event?.event_type
+        if (et === 'ScanCompleted' && payload.event?.context?.job_id === jobId) {
+          scanning = false
+        }
+      }
+    })
+  })
+
+  onDestroy(() => unlisten?.())
 
   async function startScan() {
     scanning = true
     error = ''
-    results = null
+    threats = []
     progress = 0
+    statusMsg = '제출 중…'
 
     try {
-      const quick = scanMode === 'quick'
-      jobId = await invoke('start_scan', { target, quick })
+      jobId = await invoke('start_scan', { target, mode: scanMode })
+      statusMsg = '스캔 실행 중…'
 
-      // 진행률 폴링
       const interval = setInterval(async () => {
+        if (!scanning) {
+          clearInterval(interval)
+          return
+        }
         try {
           const job: any = await invoke('get_job_progress', { jobId })
           if (job.progress) {
-            progress = job.progress.percent ?? progress
+            const p = job.progress
+            if (p.total) progress = Math.min(100, (p.current / p.total) * 100)
+            statusMsg = p.message ?? statusMsg
           }
-          if (job.status === 'Completed' || job.status === 'Failed') {
+          if (job.status === 'Completed' || job.status === 'Failed' || job.status === 'Cancelled') {
             clearInterval(interval)
             scanning = false
             if (job.status === 'Failed') {
@@ -35,7 +73,6 @@
           }
         } catch {}
       }, 1000)
-
     } catch (e: any) {
       error = e.toString()
       scanning = false
@@ -82,73 +119,62 @@
     </div>
   </div>
 
-  {#if scanning}
-    <div class="progress-section">
-      <div class="progress-bar-bg">
-        <div class="progress-bar-fill" style="width: {progress}%" />
+  <div class="actions">
+    {#if scanning}
+      <button class="btn btn-danger" on:click={cancelScan}>중지</button>
+      <div class="progress-wrap">
+        <div class="progress-bar" style="width:{progress}%"></div>
       </div>
-      <div class="progress-text">검사 중... {progress.toFixed(0)}%</div>
-      <button class="btn btn-danger" on:click={cancelScan}>중단</button>
-    </div>
-  {:else}
-    <button class="btn btn-primary btn-large" on:click={startScan}>
-      🛡 검사 시작
-    </button>
-  {/if}
+      <span class="progress-text">{progress.toFixed(0)}% — {statusMsg}</span>
+    {:else}
+      <button class="btn btn-primary" on:click={startScan}>검사 시작</button>
+    {/if}
+  </div>
 
   {#if error}
-    <div class="alert alert-danger">{error}</div>
+    <div class="alert">{error}</div>
   {/if}
 
-  <div class="info-box">
-    <strong>멀티엔진 탐지:</strong> ClamAV 시그니처 + 정적 휴리스틱 + YARA 룰 + AI 분류 + IOC 평판
-  </div>
+  {#if threats.length > 0}
+    <div class="results">
+      <h3>탐지 ({threats.length})</h3>
+      {#each threats as t}
+        <div class="threat-row">
+          <span class="path">{t.path}</span>
+          <span class="score">{(t.risk_score * 100).toFixed(0)}%</span>
+          <span class="verdict">{t.verdict}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
-  .panel { max-width: 700px; }
+  .panel { max-width: 720px; }
   .panel-title { font-size: 20px; font-weight: 700; margin-bottom: 24px; }
   .form-group { margin-bottom: 20px; }
-  .label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 6px; }
+  .label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 8px; }
   .input-row { display: flex; gap: 8px; }
-  .input {
-    flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
-    padding: 8px 12px; color: #e6edf3; font-size: 14px;
-  }
-  .input:focus { outline: none; border-color: #58a6ff; }
-
-  .mode-group { display: flex; flex-direction: column; gap: 8px; }
-  .mode-card {
-    display: flex; align-items: center; gap: 12px;
-    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-    padding: 12px 16px; cursor: pointer; transition: all 0.15s;
-  }
-  .mode-card.selected { border-color: #58a6ff; background: #1a2d3d; }
-  .mode-card input[type=radio] { accent-color: #58a6ff; }
-  .mode-name { font-size: 14px; font-weight: 600; }
-  .mode-desc { font-size: 12px; color: #8b949e; }
-
-  .progress-section { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-  .progress-bar-bg { height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; }
-  .progress-bar-fill { height: 100%; background: #58a6ff; transition: width 0.3s; }
-  .progress-text { font-size: 13px; color: #8b949e; }
-
-  .btn {
-    padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500;
-    border: 1px solid transparent; cursor: pointer; transition: all 0.15s;
-  }
-  .btn-primary { background: #1f6feb; border-color: #388bfd; color: #fff; }
-  .btn-primary:hover { background: #388bfd; }
-  .btn-secondary { background: #21262d; border-color: #30363d; color: #e6edf3; }
-  .btn-secondary:hover { background: #30363d; }
-  .btn-danger { background: #3d1a1a; border-color: #f85149; color: #f85149; }
-  .btn-large { width: 100%; padding: 12px; font-size: 15px; }
-
-  .alert { padding: 12px; border-radius: 6px; font-size: 13px; margin-top: 12px; }
-  .alert-danger { background: #3d1a1a; border: 1px solid #f85149; color: #f85149; }
-
-  .info-box {
-    margin-top: 20px; background: #161b22; border: 1px solid #30363d;
-    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #8b949e;
-  }
+  .input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 12px; color: #e6edf3; }
+  .mode-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .mode-card { display: flex; gap: 8px; padding: 12px; border: 1px solid #30363d; border-radius: 8px; cursor: pointer; }
+  .mode-card.selected { border-color: #58a6ff; background: #161b22; }
+  .mode-card input { display: none; }
+  .mode-name { font-weight: 600; font-size: 13px; }
+  .mode-desc { font-size: 11px; color: #8b949e; margin-top: 2px; }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+  .progress-wrap { flex: 1; min-width: 120px; height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; }
+  .progress-bar { height: 100%; background: #238636; transition: width 0.3s; }
+  .progress-text { font-size: 12px; color: #8b949e; }
+  .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+  .btn-primary { background: #238636; color: #fff; }
+  .btn-danger { background: #da3633; color: #fff; }
+  .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+  .alert { background: #3d1a1a; border: 1px solid #f85149; border-radius: 6px; padding: 10px 14px; color: #f85149; font-size: 13px; margin-top: 16px; }
+  .results { margin-top: 20px; }
+  .results h3 { font-size: 14px; margin-bottom: 8px; }
+  .threat-row { display: grid; grid-template-columns: 1fr 48px 80px; gap: 8px; font-size: 12px; padding: 6px 0; border-bottom: 1px solid #21262d; font-family: monospace; }
+  .path { color: #e6edf3; overflow: hidden; text-overflow: ellipsis; }
+  .score { color: #f85149; }
+  .verdict { color: #d29922; }
 </style>

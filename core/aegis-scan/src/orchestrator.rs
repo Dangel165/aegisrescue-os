@@ -207,6 +207,7 @@ impl Scanner {
             }
         }
         if let Some(r) = analyze_binary(path) { detections.push(r); }
+        if let Some(r) = crate::ai_engine::scan_file(path) { detections.push(r); }
 
         if detections.is_empty() {
             return Ok(None);

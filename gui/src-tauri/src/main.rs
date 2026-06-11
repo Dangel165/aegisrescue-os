@@ -24,11 +24,13 @@ fn main() {
             commands::restore_quarantine,
             commands::delete_quarantine,
             commands::get_events,
+            commands::run_forensic,
             commands::run_ai_analysis,
             commands::run_sandbox,
         ])
         .setup(|app| {
             let _window = app.get_window("main").unwrap();
+            commands::spawn_daemon_event_listener(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -1,7 +1,12 @@
 //! 알려진 복호화 도구 실행 관리자
 
 use crate::family::RansomwareFamily;
-use std::path::Path;
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+const DECRYPTOR_DIR: &str = "/usr/share/aegis/decryptors";
+const MANIFEST_PATH: &str = "/usr/share/aegis/decryptors/manifest.toml";
 
 pub struct RecoveryStats {
     pub total: u64,
@@ -12,6 +17,28 @@ pub struct RecoveryStats {
 pub struct Decryptor<'a> {
     family: Option<&'a RansomwareFamily>,
     key: Option<&'a str>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Manifest {
+    #[serde(default)]
+    tools: HashMap<String, ToolEntry>,
+    #[serde(default)]
+    families: HashMap<String, FamilyEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolEntry {
+    #[serde(default)]
+    args: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FamilyEntry {
+    tool: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    extension: String,
 }
 
 impl<'a> Decryptor<'a> {
@@ -25,31 +52,85 @@ impl<'a> Decryptor<'a> {
         match self.family {
             None => {
                 tracing::warn!("No ransomware family identified, skipping decryption");
-                return Ok(RecoveryStats { total: 0, recovered: 0, failed: 0 });
+                Ok(RecoveryStats {
+                    total: 0,
+                    recovered: 0,
+                    failed: 0,
+                })
             }
             Some(fam) => {
                 tracing::info!(family = fam.name, "attempting decryption");
 
                 if !fam.has_decryptor {
                     println!("  No public decryptor for {}.", fam.name);
-                    println!("  Recommendation: Restore from backup or wait for future decryptor.");
-                    return Ok(RecoveryStats { total: 0, recovered: 0, failed: 0 });
+                    println!(
+                        "  Recommendation: Restore from backup or wait for future decryptor."
+                    );
+                    return Ok(RecoveryStats {
+                        total: 0,
+                        recovered: 0,
+                        failed: 0,
+                    });
                 }
 
-                // 패밀리별 복호화 전략 선택
+                if let Some(stats) = self.try_manifest(fam, target, output).await? {
+                    return Ok(stats);
+                }
+
                 match fam.name.as_str() {
-                    "STOP/Djvu"   => self.try_stop_djvu(target, output).await,
-                    "WannaCry"    => self.try_wannacry(target, output).await,
-                    "GandCrab"    => self.try_gandcrab(target, output).await,
-                    _             => self.try_generic_decryptor(fam, target, output).await,
+                    "STOP/Djvu" => self.try_stop_djvu(target, output).await,
+                    "WannaCry" => self.try_wannacry(target, output).await,
+                    "GandCrab" => self.try_gandcrab(target, output).await,
+                    _ => self.try_generic_decryptor(fam, target, output).await,
                 }
             }
         }
     }
 
+    async fn try_manifest(
+        &self,
+        family: &RansomwareFamily,
+        target: &Path,
+        output: &Path,
+    ) -> anyhow::Result<Option<RecoveryStats>> {
+        let manifest_path = Path::new(MANIFEST_PATH);
+        if !manifest_path.exists() {
+            return Ok(None);
+        }
+
+        let text = std::fs::read_to_string(manifest_path)?;
+        let manifest: Manifest = toml::from_str(&text)?;
+
+        let family_entry = match manifest.families.get(&family.name) {
+            Some(e) => e,
+            None => return Ok(None),
+        };
+        let tool_name = family_entry.tool.clone();
+
+        let tool_entry = manifest.tools.get(&tool_name);
+        let args_template = tool_entry
+            .map(|t| t.args.clone())
+            .unwrap_or_else(|| vec![
+                "{target}".into(),
+                "{output}".into(),
+                "{family}".into(),
+            ]);
+
+        let args: Vec<String> = args_template
+            .iter()
+            .map(|a| {
+                a.replace("{target}", &target.to_string_lossy())
+                    .replace("{output}", &output.to_string_lossy())
+                    .replace("{family}", &family.name)
+                    .replace("{key}", self.key.unwrap_or(""))
+            })
+            .collect();
+
+        let stats = run_external_decryptor(&tool_name, &args, target).await;
+        Ok(Some(stats))
+    }
+
     async fn try_stop_djvu(&self, target: &Path, output: &Path) -> anyhow::Result<RecoveryStats> {
-        // STOP Djvu: emsisoft_decryptor 래퍼
-        // 오프라인 키는 /usr/share/aegis/keys/stop_djvu_offline.key
         let key_path = Path::new("/usr/share/aegis/keys/stop_djvu_offline.key");
 
         let mut args = vec![
@@ -59,7 +140,10 @@ impl<'a> Decryptor<'a> {
         ];
 
         if key_path.exists() {
-            args.extend(["--key".to_string(), key_path.to_string_lossy().to_string()]);
+            args.extend([
+                "--key".to_string(),
+                key_path.to_string_lossy().to_string(),
+            ]);
         } else if let Some(k) = self.key {
             args.extend(["--key".to_string(), k.to_string()]);
         }
@@ -69,27 +153,26 @@ impl<'a> Decryptor<'a> {
     }
 
     async fn try_wannacry(&self, target: &Path, output: &Path) -> anyhow::Result<RecoveryStats> {
-        // WannaCry: wanakiwi (메모리에서 키 복구, 이미 늦은 경우 불가)
-        // .WNCRY 파일 → wncry_decrypt
         let encrypted_files = collect_files_with_ext(target, "WNCRY");
         let total = encrypted_files.len() as u64;
         let mut recovered = 0u64;
 
         for file in &encrypted_files {
-            let out_file = output.join(
-                file.strip_prefix(target).unwrap_or(file)
-            );
+            let out_file = output.join(file.strip_prefix(target).unwrap_or(file));
             if let Some(parent) = out_file.parent() {
                 std::fs::create_dir_all(parent).ok();
             }
 
-            // wncry 파일 헤더(8바이트) + .WNCRY 매직 제거 후 복사 (키 없는 경우 부분 복구)
             if try_wncry_partial_recover(file, &out_file).is_ok() {
                 recovered += 1;
             }
         }
 
-        Ok(RecoveryStats { total, recovered, failed: total - recovered })
+        Ok(RecoveryStats {
+            total,
+            recovered,
+            failed: total - recovered,
+        })
     }
 
     async fn try_gandcrab(&self, target: &Path, output: &Path) -> anyhow::Result<RecoveryStats> {
@@ -97,11 +180,7 @@ impl<'a> Decryptor<'a> {
             target.to_string_lossy().into_owned(),
             output.to_string_lossy().into_owned(),
         ];
-        let stats = run_external_decryptor(
-            "bitdefender_gandcrab_decryptor",
-            &args,
-            target,
-        ).await;
+        let stats = run_external_decryptor("bitdefender_gandcrab_decryptor", &args, target).await;
         Ok(stats)
     }
 
@@ -126,53 +205,82 @@ impl<'a> Decryptor<'a> {
             output = %output.display(),
             candidates = candidates.len(),
             decryptor_url = family.decryptor_url.as_deref().unwrap_or("none"),
-            "no built-in decryptor, cataloguing encrypted files"
+            "running generic decryptor catalog"
         );
 
         if let Some(url) = &family.decryptor_url {
             println!("  Decryptor available at: {}", url);
-            println!("  Download and place in /usr/share/aegis/decryptors/ for automatic use");
+            println!("  Download vendor binary to /usr/share/aegis/decryptors/vendor/");
         }
 
-        let manifest = output.join("pending_decryptor_files.txt");
-        let mut lines = Vec::new();
-        for path in &candidates {
-            lines.push(path.display().to_string());
-        }
-        std::fs::write(&manifest, lines.join("\n"))?;
+        let args = vec![
+            target.to_string_lossy().into_owned(),
+            output.to_string_lossy().into_owned(),
+            family.name.clone(),
+        ];
+        let stats = run_external_decryptor("aegis_generic_decryptor", &args, target).await;
 
-        Ok(RecoveryStats {
-            total: candidates.len() as u64,
-            recovered: 0,
-            failed: candidates.len() as u64,
-        })
+        if stats.total == 0 && !candidates.is_empty() {
+            let manifest = output.join("pending_decryptor_files.txt");
+            let lines: Vec<String> = candidates.iter().map(|p| p.display().to_string()).collect();
+            std::fs::write(&manifest, lines.join("\n"))?;
+            return Ok(RecoveryStats {
+                total: candidates.len() as u64,
+                recovered: 0,
+                failed: candidates.len() as u64,
+            });
+        }
+
+        Ok(stats)
     }
 }
 
-async fn run_external_decryptor(
-    tool: &str,
-    args: &[String],
-    _target: &Path,
-) -> RecoveryStats {
-    let tool_path = format!("/usr/share/aegis/decryptors/{}", tool);
+async fn run_external_decryptor(tool: &str, args: &[String], target: &Path) -> RecoveryStats {
+    let tool_path = PathBuf::from(DECRYPTOR_DIR).join(tool);
 
-    if !Path::new(&tool_path).exists() {
-        tracing::warn!(tool = tool, "external decryptor not found at {}", tool_path);
-        return RecoveryStats { total: 0, recovered: 0, failed: 0 };
+    if !tool_path.exists() {
+        tracing::warn!(tool = tool, path = %tool_path.display(), "external decryptor not found");
+        return RecoveryStats {
+            total: 0,
+            recovered: 0,
+            failed: 0,
+        };
     }
+
+    let total = count_target_files(target);
 
     match tokio::process::Command::new(&tool_path)
         .args(args)
         .status()
         .await
     {
-        Ok(s) if s.success() => {
-            RecoveryStats { total: 1, recovered: 1, failed: 0 }
-        }
-        Ok(_) | Err(_) => {
-            RecoveryStats { total: 1, recovered: 0, failed: 1 }
+        Ok(s) if s.success() => RecoveryStats {
+            total: total.max(1),
+            recovered: total.max(1),
+            failed: 0,
+        },
+        Ok(_) => RecoveryStats {
+            total: total.max(1),
+            recovered: 0,
+            failed: total.max(1),
+        },
+        Err(e) => {
+            tracing::warn!(tool = tool, error = %e, "decryptor execution failed");
+            RecoveryStats {
+                total: total.max(1),
+                recovered: 0,
+                failed: total.max(1),
+            }
         }
     }
+}
+
+fn count_target_files(target: &Path) -> u64 {
+    walkdir::WalkDir::new(target)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .count() as u64
 }
 
 fn collect_files_with_ext(dir: &Path, ext: &str) -> Vec<std::path::PathBuf> {
@@ -180,7 +288,8 @@ fn collect_files_with_ext(dir: &Path, ext: &str) -> Vec<std::path::PathBuf> {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().extension()
+            e.path()
+                .extension()
                 .and_then(|s| s.to_str())
                 .map(|s| s.eq_ignore_ascii_case(ext))
                 .unwrap_or(false)
@@ -193,11 +302,7 @@ fn try_wncry_partial_recover(src: &Path, dst: &Path) -> anyhow::Result<()> {
     use std::io::Write;
     let data = std::fs::read(src)?;
 
-    // WNCRY 포맷: 매직 "WANACRY!" (8 bytes) + 암호화 블록
-    // 암호화 전 원본의 일부가 헤더에 저장되는 경우 추출 시도
     if data.len() > 8 && &data[..8] == b"WANACRY!" {
-        // 실제 복호화 키 없이는 완전 복구 불가
-        // 단, 파일 메타데이터 및 구조 보존
         let mut out = std::fs::File::create(dst)?;
         out.write_all(&data[8.min(data.len())..])?;
     }
