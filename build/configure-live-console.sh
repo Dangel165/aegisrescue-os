@@ -44,6 +44,13 @@ if grep -Eq '(^| )aegis\.cli=1($| )' /proc/cmdline 2>/dev/null; then
     echo "  Commands: aegis | aegis-installer | aegiscenter"
     echo "  Manual GUI: /opt/aegis/bin/aegis-startx.sh"
     echo ""
+elif ! grep -Eq '(^| )aegis\.cli=1($| )' /proc/cmdline 2>/dev/null && [ -z "${DISPLAY:-}" ]; then
+    echo ""
+    echo "  GUI Live — X not running on this tty."
+    echo "  Try:  sudo systemctl start lightdm"
+    echo "    or:  /opt/aegis/bin/aegis-startx.sh"
+    echo "  Logs: /var/log/lightdm/  /tmp/aegis-gui-fallback.log"
+    echo ""
 fi
 EOF
     cp "${chroot}/home/aegis/.bash_profile" "${chroot}/etc/skel/.bash_profile"
