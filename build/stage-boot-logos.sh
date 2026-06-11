@@ -8,6 +8,20 @@ AEGIS_BOOT_LOGO_PCT="${AEGIS_BOOT_LOGO_PCT:-6}"
 # Plymouth: fixed pixel mark (1:1) — avoids full-canvas upscale on some VMs
 AEGIS_PLYMOUTH_LOGO_PX="${AEGIS_PLYMOUTH_LOGO_PX:-120}"
 
+ensure_boot_logo_build_deps() {
+    if command -v convert >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1; then
+        return 0
+    fi
+    if [[ ${EUID:-0} -eq 0 ]]; then
+        apt-get install -y --no-install-recommends imagemagick librsvg2-bin 2>/dev/null || true
+    fi
+    if command -v convert >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "ensure_boot_logo_build_deps: imagemagick + librsvg2-bin 필요 (sudo bash build/wsl-build.sh --setup)" >&2
+    return 1
+}
+
 resolve_boot_mark_svg() {
     local project_root="$1"
     local boot_mark="${project_root}/docs/assets/aegisrescue-boot-mark.svg"
@@ -119,6 +133,8 @@ stage_iso_boot_logos() {
     local project_root="$1"
     local iso_stage="$2"
 
+    ensure_boot_logo_build_deps || true
+
     # shellcheck source=resolve-boot-logo.sh
     source "${project_root}/build/resolve-boot-logo.sh"
 
@@ -141,6 +157,8 @@ stage_iso_boot_logos() {
 install_chroot_boot_logos() {
     local project_root="$1"
     local chroot="$2"
+
+    ensure_boot_logo_build_deps || true
 
     # shellcheck source=resolve-boot-logo.sh
     source "${project_root}/build/resolve-boot-logo.sh"

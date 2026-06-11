@@ -878,11 +878,15 @@ ensure_chroot_installer_tools() {
     chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
         apt-get install -y --no-install-recommends squashfs-tools rsync \
         2>/dev/null || warn "squashfs-tools/rsync 설치 실패 — chroot apt 확인"
-    if chroot "${chroot}" command -v unsquashfs >/dev/null 2>&1 && \
-       chroot "${chroot}" command -v rsync >/dev/null 2>&1; then
+
+    local has_unsquash=false has_rsync=false
+    [[ -x "${chroot}/usr/bin/unsquashfs" || -x "${chroot}/usr/sbin/unsquashfs" ]] && has_unsquash=true
+    [[ -x "${chroot}/usr/bin/rsync" ]] && has_rsync=true
+
+    if $has_unsquash && $has_rsync; then
         ok "Live 설치 도구: unsquashfs + rsync"
     else
-        warn "Live ISO에 unsquashfs/rsync 없음 — 디스크 설치 실패 가능"
+        warn "Live ISO에 unsquashfs/rsync 없음 (unsquashfs=${has_unsquash}, rsync=${has_rsync})"
     fi
 }
 
