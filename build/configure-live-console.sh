@@ -43,8 +43,10 @@ if grep -Eq '(^| )aegis\.cli=1($| )' /proc/cmdline 2>/dev/null; then
     echo ""
 elif [ -z "${DISPLAY:-}" ] && [ -f /tmp/aegis-startx.log ]; then
     echo ""
-    echo "  GUI start failed — log: /tmp/aegis-startx.log"
-    echo "  Fallback: Alt+F2 for CLI  |  retry: startx"
+    echo "  GUI start failed:"
+    echo "    /tmp/aegis-startx.log"
+    echo "    /var/log/Xorg.0.log"
+    echo "  Fallback: Alt+F2 for CLI  |  retry: startx -- :0 vt1"
     echo ""
 fi
 EOF

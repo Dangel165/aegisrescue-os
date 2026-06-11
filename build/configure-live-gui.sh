@@ -7,7 +7,8 @@ configure_live_gui() {
 
     chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
         apt-get install -y --no-install-recommends \
-        xserver-xorg-core xserver-xorg-video-vesa xserver-xorg-video-all \
+        xserver-xorg-core xserver-xorg xserver-xorg-video-vesa xserver-xorg-video-all \
+        xserver-xorg-input-libinput \
         x11-xserver-utils x11-xkb-utils xauth xinit \
         openbox obconf nitrogen \
         libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 \
@@ -28,6 +29,12 @@ Section "Screen"
     Identifier "Screen0"
     Device     "Device0"
 EndSection
+EOF
+
+    mkdir -p "${chroot}/etc/X11"
+    cat > "${chroot}/etc/X11/Xwrapper.config" <<'EOF'
+allowed_users=anybody
+needs_root_rights=yes
 EOF
 
     mkdir -p "${chroot}/usr/share/applications"
