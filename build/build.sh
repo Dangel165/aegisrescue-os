@@ -565,6 +565,9 @@ TIMEOUT 100
 PROMPT 0
 MENU TITLE AegisRescue Beta ${VERSION}
 MENU BACKGROUND splash.png
+EOF
+    cat "${SCRIPT_DIR}/isolinux/vesamenu-colors.cfg" >> "${ISO_STAGE}/isolinux/isolinux.cfg"
+    cat >> "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF
 
 LABEL live
   MENU LABEL AegisRescue Live (GUI + Installer)

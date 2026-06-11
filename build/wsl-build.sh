@@ -1128,6 +1128,9 @@ DEFAULT vesamenu.c32
 TIMEOUT 100
 MENU TITLE AegisRescue Beta ${VERSION}
 MENU BACKGROUND splash.png
+EOF
+    cat "${WSL_HOME}/build/isolinux/vesamenu-colors.cfg" >> "${ISO_STAGE}/isolinux/isolinux.cfg"
+    cat >> "${ISO_STAGE}/isolinux/isolinux.cfg" <<EOF
 LABEL live
   MENU LABEL AegisRescue Live (GUI + Installer)
   KERNEL /boot/vmlinuz

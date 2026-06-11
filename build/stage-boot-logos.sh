@@ -87,7 +87,32 @@ prepare_boot_logo_png() {
 }
 
 prepare_menu_splash_png() {
-    prepare_centered_boot_logo_png "$1" "$2" 800 450 "${AEGIS_BOOT_LOGO_PCT}" "${3:-}"
+    local src_png="$1"
+    local dst_png="$2"
+    local src_svg="${3:-}"
+    local logo_w=48
+
+    mkdir -p "$(dirname "$dst_png")"
+
+    if command -v convert >/dev/null 2>&1; then
+        if [[ -f "$src_svg" ]] && command -v rsvg-convert >/dev/null 2>&1; then
+            local tmp_logo
+            tmp_logo="$(mktemp /tmp/aegis-isolinux-logo.XXXXXX.png)"
+            rsvg-convert -w "${logo_w}" "$src_svg" -o "${tmp_logo}" 2>/dev/null || true
+            if [[ -s "$tmp_logo" ]]; then
+                convert -size 640x480 gradient:'#404040-#0a0a0a' \
+                    "$tmp_logo" -gravity north -geometry +0+48 -composite \
+                    PNG:"$dst_png" 2>/dev/null && {
+                    rm -f "$tmp_logo"
+                    return 0
+                }
+            fi
+            rm -f "$tmp_logo"
+        fi
+        convert -size 640x480 gradient:'#404040-#0a0a0a' PNG:"$dst_png" 2>/dev/null && return 0
+    fi
+
+    prepare_centered_boot_logo_png "$1" "$2" 640 480 6 "${3:-}"
 }
 
 stage_iso_boot_logos() {
