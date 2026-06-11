@@ -7,9 +7,10 @@ configure_live_gui() {
 
     chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC \
         apt-get install -y --no-install-recommends \
-        xserver-xorg-core xserver-xorg xserver-xorg-video-vesa xserver-xorg-video-all \
+        xserver-xorg-core xserver-xorg xserver-xorg-legacy xserver-xorg-video-vesa \
+        xserver-xorg-video-fbdev xserver-xorg-video-all \
         xserver-xorg-input-libinput \
-        x11-xserver-utils x11-xkb-utils xauth xinit \
+        x11-xserver-utils x11-xkb-utils xauth xinit x11-common \
         openbox obconf nitrogen \
         libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0 \
         libgtk-3-0 libayatana-appindicator3-1 librsvg2-2 \
@@ -32,6 +33,19 @@ EndSection
 EOF
 
     mkdir -p "${chroot}/etc/X11"
+    cat > "${chroot}/etc/X11/Xwrapper.config" <<'EOF'
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+
+    # Non-root startx on autologin tty (VirtualBox/live ISO — logind seat often insufficient)
+    {
+        echo 'xserver-xorg-legacy xserver-xorg-legacy/xwrapper/allowed_users select Anybody'
+        echo 'xserver-xorg-legacy xserver-xorg-legacy/xwrapper/allowed_users seen true'
+    } | chroot "${chroot}" debconf-set-selections 2>/dev/null || true
+    chroot "${chroot}" env DEBIAN_FRONTEND=noninteractive \
+        dpkg-reconfigure -f noninteractive xserver-xorg-legacy 2>/dev/null || true
+    # Re-apply after legacy postinst (VMs need root Xorg without KMS)
     cat > "${chroot}/etc/X11/Xwrapper.config" <<'EOF'
 allowed_users=anybody
 needs_root_rights=yes

@@ -13,7 +13,8 @@ if command -v plymouth >/dev/null 2>&1; then
 fi
 
 : > /tmp/aegis-startx.log
-if startx -- :0 vt1 -nolisten tcp -noreset >>/tmp/aegis-startx.log 2>&1; then
+_vt="$(fgconsole 2>/dev/null || echo 1)"
+if startx -- :0 -vt"${_vt}" -nolisten tcp -noreset >>/tmp/aegis-startx.log 2>&1; then
     exit 0
 fi
 
